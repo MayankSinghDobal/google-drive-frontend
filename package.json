@@ -12,7 +12,9 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.1",
     "@mui/material": "^7.3.1",
+    "@rive-app/react-canvas": "^4.23.1",
     "axios": "^1.11.0",
     "framer-motion": "^12.23.12",
     "lottie-react": "^2.4.1",
