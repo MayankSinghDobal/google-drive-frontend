@@ -178,7 +178,7 @@ const Layout: React.FC = () => {
 
   const handleShare = async (id: number) => {
     const email = prompt("Enter email to share with:");
-    if (email) {
+    if (email && typeof email === "string") {
       try {
         await shareFile(id, email, "view");
         setSnackbar({
@@ -186,13 +186,19 @@ const Layout: React.FC = () => {
           message: "File shared successfully!",
           severity: "success",
         });
-      } catch (err) {
+      } catch (err: any) {
         setSnackbar({
           open: true,
-          message: "Sharing failed. Please try again.",
+          message: err.response?.data?.message || "Sharing failed. Please try again.",
           severity: "error",
         });
       }
+    } else {
+      setSnackbar({
+        open: true,
+        message: "Email is required to share the file.",
+        severity: "error",
+      });
     }
   };
 

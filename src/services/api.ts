@@ -95,9 +95,11 @@ export const uploadFile = async (
 
 export const shareFile = async (
   fileId: number,
+  email: string,
   role: "view" | "edit"
 ): Promise<ShareResponse> => {
   const response = await api.post<ShareResponse>(`/files/${fileId}/share`, {
+    email,
     role,
   });
   return response.data;
