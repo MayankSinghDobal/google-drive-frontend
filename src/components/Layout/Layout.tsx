@@ -1,16 +1,39 @@
-// 3. Fixed Layout.tsx - Proper type checking for filtering
-import React, { useState } from "react";
-import { Box, CssBaseline } from "@mui/material";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  Box,
+  CssBaseline,
+  CircularProgress,
+  Typography,
+  Breadcrumbs,
+  Link,
+  Snackbar,
+  Alert,
+  Button,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+} from "@mui/material";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import Sidebar from "../Sidebar/Sidebar";
 import TopBar from "../TopBar/TopBar";
 import FileList from "../FileList/FileList";
 import type { Item, Folder, User } from "../../types";
+import {
+  getFilesAndFolders,
+  getUser,
+  searchItems,
+  uploadFile,
+  shareFile,
+  logout,
+} from "../../services/api";
+import axios from "axios";
 
 const theme = createTheme({
   palette: {
-    primary: { main: "#4285f4" }, // Google blue
-    secondary: { main: "#fbbc05" }, // Google yellow
+    primary: { main: "#4285f4" },
+    secondary: { main: "#fbbc05" },
     background: { default: "#f5f5f5" },
   },
   typography: {
@@ -21,97 +44,229 @@ const theme = createTheme({
 const Layout: React.FC = () => {
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [user] = useState<User | null>({
-    id: 1,
-    name: "Test User",
-    email: "test@example.com",
+  const [user, setUser] = useState<User | null>(null);
+  const [items, setItems] = useState<Item[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error";
+  }>({
+    open: false,
+    message: "",
+    severity: "success",
   });
+  const [isDragging, setIsDragging] = useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
 
-  // Placeholder data (replace with API calls later)
-  const folders: Folder[] = [
-    {
-      id: 1,
-      name: "Documents",
-      user_id: 1,
-      parent_id: null,
-      created_at: "2025-08-24",
-      type: "folder",
-    },
-    {
-      id: 2,
-      name: "Work",
-      user_id: 1,
-      parent_id: 1,
-      created_at: "2025-08-24",
-      type: "folder",
-    },
-  ];
-  
-  const items: Item[] = [
-    {
-      id: 1,
-      name: "Resume.pdf",
-      size: 1024,
-      format: "application/pdf",
-      path: "files/resume.pdf",
-      user_id: 1,
-      folder_id: null,
-      created_at: "2025-08-24",
-      type: "file",
-      publicUrl: "",
-    },
-    {
-      id: 2,
-      name: "Photo.jpg",
-      size: 2048,
-      format: "image/jpeg",
-      path: "files/photo.jpg",
-      user_id: 1,
-      folder_id: 1,
-      created_at: "2025-08-24",
-      type: "file",
-      publicUrl: "",
-    },
-    {
-      id: 3,
-      name: "Notes",
-      user_id: 1,
-      parent_id: null,
-      created_at: "2025-08-24",
-      type: "folder",
-    },
-  ];
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const userData = await getUser();
+        setUser(userData);
+        const fetchedItems = await getFilesAndFolders(selectedFolder);
+        setItems(fetchedItems);
+        setFolders(
+          fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
+        );
+      } catch (err) {
+        setError("Failed to load data. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const handleSearch = (query: string) => {
+    fetchData();
+  }, [selectedFolder]);
+
+  const handleSearch = async (query: string) => {
     setSearchQuery(query);
-    // Add API call to /search?query= later
+    if (query) {
+      try {
+        const searchResults = await searchItems(query);
+        setItems(searchResults);
+      } catch (err) {
+        setSnackbar({
+          open: true,
+          message: "Search failed. Please try again.",
+          severity: "error",
+        });
+      }
+    } else {
+      const fetchedItems = await getFilesAndFolders(selectedFolder);
+      setItems(fetchedItems);
+    }
   };
 
-  const handleUpload = () => {
-    alert("Upload clicked (to be implemented)");
+  const handleUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    try {
+      setUploadProgress(0);
+      const file = files[0];
+      const config = {
+        onUploadProgress: (progressEvent: ProgressEvent) => {
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / (progressEvent.total || 1)
+          );
+          setUploadProgress(percent);
+        },
+      };
+      await uploadFile(file, selectedFolder, config);
+      setSnackbar({
+        open: true,
+        message: "File uploaded successfully!",
+        severity: "success",
+      });
+      const fetchedItems = await getFilesAndFolders(selectedFolder);
+      setItems(fetchedItems);
+      setFolders(
+        fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
+      );
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: "Upload failed. Please try again.",
+        severity: "error",
+      });
+    } finally {
+      setUploadProgress(0);
+    }
   };
 
-  const handleShare = (id: number) => {
-    alert(`Share item ${id} clicked (to be implemented)`);
+  const handleCreateFolder = async () => {
+    if (!newFolderName) {
+      setSnackbar({
+        open: true,
+        message: "Folder name is required.",
+        severity: "error",
+      });
+      return;
+    }
+    try {
+      await axios.post(
+        "https://google-drive-backend-ten.vercel.app/folders/create",
+        { name: newFolderName, parent_id: selectedFolder },
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        }
+      );
+      setSnackbar({
+        open: true,
+        message: "Folder created successfully!",
+        severity: "success",
+      });
+      const fetchedItems = await getFilesAndFolders(selectedFolder);
+      setItems(fetchedItems);
+      setFolders(
+        fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
+      );
+      setFolderDialogOpen(false);
+      setNewFolderName("");
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: "Folder creation failed. Please try again.",
+        severity: "error",
+      });
+    }
   };
 
-  const handleLogout = () => {
-    alert("Logout clicked (to be implemented)");
+  const handleShare = async (id: number) => {
+    const email = prompt("Enter email to share with:");
+    if (email) {
+      try {
+        await shareFile(id, email, "view");
+        setSnackbar({
+          open: true,
+          message: "File shared successfully!",
+          severity: "success",
+        });
+      } catch (err) {
+        setSnackbar({
+          open: true,
+          message: "Sharing failed. Please try again.",
+          severity: "error",
+        });
+      }
+    }
   };
 
-  // Fixed filtering logic
-  const filteredItems = items.filter((item) => {
-    // Check folder filter
-    const folderMatch = selectedFolder === null || 
-      (item.type === "file" && item.folder_id === selectedFolder) ||
-      (item.type === "folder" && item.parent_id === selectedFolder);
-    
-    // Check search filter
-    const searchMatch = !searchQuery || 
-      item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return folderMatch && searchMatch;
-  });
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setUser(null);
+      setItems([]);
+      setFolders([]);
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: "Logout failed. Please try again.",
+        severity: "error",
+      });
+    }
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleUpload(e.dataTransfer.files);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+
+  const getBreadcrumbs = () => {
+    const crumbs: { id: number | null; name: string }[] = [
+      { id: null, name: "My Drive" },
+    ];
+    if (selectedFolder) {
+      let currentFolder = folders.find((f: Folder) => f.id === selectedFolder);
+      const path: { id: number; name: string }[] = [];
+      while (currentFolder) {
+        path.unshift({ id: currentFolder.id, name: currentFolder.name });
+        currentFolder = folders.find((f: Folder) => f.id === currentFolder!.parent_id);
+      }
+      crumbs.push(...path);
+    }
+    return crumbs;
+  };
+
+  if (loading) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+          <CircularProgress />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (error) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{ p: 4, textAlign: "center" }}>
+          <Typography color="error">{error}</Typography>
+        </Box>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider theme={theme}>
@@ -125,14 +280,133 @@ const Layout: React.FC = () => {
         <Box sx={{ flexGrow: 1 }}>
           <TopBar
             onSearch={handleSearch}
-            onUpload={handleUpload}
+            onUpload={() => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.onchange = (e: Event) =>
+                handleUpload((e.target as HTMLInputElement).files);
+              input.click();
+            }}
             user={user}
             onLogout={handleLogout}
           />
+          <Box sx={{ p: 2 }}>
+            <Breadcrumbs>
+              {getBreadcrumbs().map((crumb, index) => (
+                <Link
+                  key={crumb.id ?? "root"}
+                  underline="hover"
+                  color={
+                    index === getBreadcrumbs().length - 1
+                      ? "text.primary"
+                      : "inherit"
+                  }
+                  onClick={() => setSelectedFolder(crumb.id)}
+                  sx={{ cursor: "pointer" }}
+                >
+                  {crumb.name}
+                </Link>
+              ))}
+            </Breadcrumbs>
+            <Button
+              variant="contained"
+              onClick={() => setFolderDialogOpen(true)}
+              sx={{ mt: 2 }}
+            >
+              New Folder
+            </Button>
+          </Box>
+          <Box
+            sx={{
+              border: isDragging ? "2px dashed #4285f4" : "1px dashed #ccc",
+              p: 2,
+              m: 2,
+              borderRadius: 1,
+              backgroundColor: isDragging ? "#e3f2fd" : "inherit",
+            }}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <Typography
+              sx={{
+                textAlign: "center",
+                color: isDragging ? "#4285f4" : "inherit",
+              }}
+            >
+              {isDragging
+                ? "Drop files here"
+                : "Drag and drop files here or click Upload"}
+            </Typography>
+            {uploadProgress > 0 && (
+              <Box sx={{ mt: 2 }}>
+                <Typography>Upload Progress: {uploadProgress}%</Typography>
+                <Box
+                  sx={{
+                    width: "100%",
+                    bgcolor: "#f5f5f5",
+                    borderRadius: 1,
+                    overflow: "hidden",
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: `${uploadProgress}%`,
+                      bgcolor: "#4285f4",
+                      height: 8,
+                    }}
+                  />
+                </Box>
+              </Box>
+            )}
+          </Box>
           <FileList
-            items={filteredItems}
+            items={items.filter(
+              (item: Item) =>
+                (selectedFolder === null ||
+                  (item.type === "file" && item.folder_id === selectedFolder) ||
+                  (item.type === "folder" &&
+                    item.parent_id === selectedFolder)) &&
+                (!searchQuery ||
+                  item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+            )}
             onShare={handleShare}
           />
+          <Dialog
+            open={folderDialogOpen}
+            onClose={() => setFolderDialogOpen(false)}
+          >
+            <DialogTitle>Create New Folder</DialogTitle>
+            <DialogContent>
+              <TextField
+                label="Folder Name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                fullWidth
+                margin="normal"
+                required
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setFolderDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleCreateFolder} variant="contained">
+                Create
+              </Button>
+            </DialogActions>
+          </Dialog>
+          <Snackbar
+            open={snackbar.open}
+            autoHideDuration={6000}
+            onClose={handleSnackbarClose}
+          >
+            <Alert
+              onClose={handleSnackbarClose}
+              severity={snackbar.severity}
+              sx={{ width: "100%" }}
+            >
+              {snackbar.message}
+            </Alert>
+          </Snackbar>
         </Box>
       </Box>
     </ThemeProvider>
