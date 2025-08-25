@@ -82,17 +82,12 @@ const Signup: React.FC<SignupProps> = ({ onSignup, setIsSignup }) => {
       localStorage.setItem("token", token);
       onSignup(user);
     } catch (err: any) {
-      console.error('Signup error:', err);
-      
-      if (err.response) {
-        // Server responded with error
-        setError(err.response.data?.error || "Signup failed");
-      } else if (err.request) {
-        // Network error
-        setError("Network error. Please check your connection and try again.");
-      } else {
-        setError("An unexpected error occurred.");
-      }
+      console.error('Signup error:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+      });
+      setError(err.response?.data?.error || "Signup failed: Network error");
     } finally {
       setLoading(false);
     }
@@ -102,97 +97,97 @@ const Signup: React.FC<SignupProps> = ({ onSignup, setIsSignup }) => {
     <ThemeProvider theme={theme}>
       <Box
         sx={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
           minHeight: "100vh",
+          bgcolor: "background.default",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
           p: 2,
-          backgroundColor: theme.palette.background.default,
         }}
-      >
-        <Typography variant="h4" gutterBottom>
-          Google Drive Clone - Signup
-        </Typography>
-        
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-          API URL: {API_BASE_URL}
-        </Typography>
+      />
+        <Box sx={{ textAlign: "center" }}>
+          <Typography variant="h4" gutterBottom>
+            Sign Up for Google Drive Clone
+          </Typography>
+          
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            API URL: {API_BASE_URL}
+          </Typography>
 
-        <Box
-          component="form"
-          onSubmit={handleSubmit}
-          sx={{ maxWidth: 400, width: "100%" }}
-        >
-          <TextField
-            label="Full Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            fullWidth
-            margin="normal"
-            required
-            disabled={loading}
-          />
-          <TextField
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            fullWidth
-            margin="normal"
-            required
-            disabled={loading}
-          />
-          <TextField
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            fullWidth
-            margin="normal"
-            required
-            disabled={loading}
-            helperText="Password must be at least 6 characters"
-          />
-          <TextField
-            label="Confirm Password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            fullWidth
-            margin="normal"
-            required
-            disabled={loading}
-          />
-          
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error}
-            </Alert>
-          )}
-          
-          <Button
-            type="submit"
-            variant="contained"
-            fullWidth
-            sx={{ mt: 2 }}
-            disabled={loading}
+          <Box
+            component="form"
+            onSubmit={handleSubmit}
+            sx={{ maxWidth: 400, width: "100%" }}
           >
-            {loading ? <CircularProgress size={24} /> : "Sign Up"}
-          </Button>
-          
-          <Button
-            variant="text"
-            fullWidth
-            sx={{ mt: 1 }}
-            onClick={() => setIsSignup(false)}
-            disabled={loading}
-          >
-            Already have an account? Login
-          </Button>
+            <TextField
+              label="Full Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              fullWidth
+              margin="normal"
+              required
+              disabled={loading}
+            />
+            <TextField
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              fullWidth
+              margin="normal"
+              required
+              disabled={loading}
+            />
+            <TextField
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              fullWidth
+              margin="normal"
+              required
+              disabled={loading}
+              helperText="Password must be at least 6 characters"
+            />
+            <TextField
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              fullWidth
+              margin="normal"
+              required
+              disabled={loading}
+            />
+            
+            {error && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {error}
+              </Alert>
+            )}
+            
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ mt: 2 }}
+              disabled={loading}
+            >
+              {loading ? <CircularProgress size={24} /> : "Sign Up"}
+            </Button>
+            
+            <Button
+              variant="text"
+              fullWidth
+              sx={{ mt: 1 }}
+              onClick={() => setIsSignup(false)}
+              disabled={loading}
+            >
+              Already have an account? Login
+            </Button>
+          </Box>
         </Box>
-      </Box>
-    </ThemeProvider>
+      </ThemeProvider>
   );
 };
 

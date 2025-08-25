@@ -42,6 +42,25 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const testConnection = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/test`, {
+        withCredentials: true,
+      });
+      console.log("Connection test successful:", response.data);
+      return true;
+    } catch (err: any) {
+      console.error("Connection test failed:", {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        headers: err.response?.headers,
+      });
+      setError(`Connection test failed: ${err.message}`);
+      return false;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -67,39 +86,24 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
       localStorage.setItem("token", token);
       onLogin(user);
     } catch (err: any) {
-      console.error('Login error:', err);
-      
-      if (err.response) {
-        // Server responded with error
-        setError(err.response.data?.error || "Login failed");
-      } else if (err.request) {
-        // Network error
-        setError("Network error. Please check your connection and try again.");
-      } else {
-        setError("An unexpected error occurred.");
-      }
+      console.error('Login error:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+      });
+      setError(err.response?.data?.error || "Login failed: Network error");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleLogin = async (credentialResponse: {
-    credential?: string;
-  }) => {
-    if (!credentialResponse.credential) {
-      setError("Google login failed. No credential received.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    
+  const handleGoogleLogin = async (credentialResponse: any) => {
     try {
       console.log('Attempting Google login to:', `${API_BASE_URL}/auth/google`);
       
       const response = await axios.post<LoginResponse>(
         `${API_BASE_URL}/auth/google`,
-        { credential: credentialResponse.credential },
+        { token: credentialResponse.credential },
         {
           headers: {
             'Content-Type': 'application/json',
@@ -114,30 +118,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
       localStorage.setItem("token", token);
       onLogin(user);
     } catch (err: any) {
-      console.error("Google login error:", err);
-      
-      if (err.response) {
-        setError(err.response.data?.error || "Google login failed");
-      } else if (err.request) {
-        setError("Network error. Please check your connection and try again.");
-      } else {
-        setError("Google login failed. Please try again.");
-      }
+      console.error('Google login error:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+      });
+      setError(err.response?.data?.error || "Google login failed: Network error");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const testConnection = async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/test`, {
-        withCredentials: true,
-      });
-      console.log('Connection test:', response.data);
-      setError("Connection test successful! Check console for details.");
-    } catch (err: any) {
-      console.error('Connection test failed:', err);
-      setError("Connection test failed. Check console for details.");
     }
   };
 
@@ -145,98 +133,98 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
     <ThemeProvider theme={theme}>
       <Box
         sx={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
           minHeight: "100vh",
+          bgcolor: "background.default",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
           p: 2,
-          backgroundColor: theme.palette.background.default,
         }}
-      >
-        <Typography variant="h4" gutterBottom>
-          Google Drive Clone - Login
-        </Typography>
-        
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-          API URL: {API_BASE_URL}
-        </Typography>
-        
-        <Button
-          variant="outlined"
-          onClick={testConnection}
-          sx={{ mb: 2 }}
-          size="small"
-        >
-          Test Connection
-        </Button>
+      />
+        <Box sx={{ textAlign: "center" }}>
+          <Typography variant="h4" gutterBottom>
+            Login to Google Drive Clone
+          </Typography>
+          
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            API URL: {API_BASE_URL}
+          </Typography>
+          
+          <Button
+            variant="outlined"
+            onClick={testConnection}
+            sx={{ mb: 2 }}
+            size="small"
+          >
+            Test Connection
+          </Button>
 
-        <Box
-          component="form"
-          onSubmit={handleSubmit}
-          sx={{ maxWidth: 400, width: "100%" }}
-        >
-          <TextField
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            fullWidth
-            margin="normal"
-            required
-            disabled={loading}
-          />
-          <TextField
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            fullWidth
-            margin="normal"
-            required
-            disabled={loading}
-          />
-          
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error}
-            </Alert>
-          )}
-          
-          <Button
-            type="submit"
-            variant="contained"
-            fullWidth
-            sx={{ mt: 2 }}
-            disabled={loading}
+          <Box
+            component="form"
+            onSubmit={handleSubmit}
+            sx={{ maxWidth: 400, width: "100%" }}
           >
-            {loading ? <CircularProgress size={24} /> : "Login"}
-          </Button>
-          
-          <Box sx={{ mt: 2, textAlign: "center" }}>
-            <GoogleLogin
-              onSuccess={handleGoogleLogin}
-              onError={() => {
-                console.error("Google login failed");
-                setError("Google login failed. Please try again.");
-              }}
-              useOneTap
+            <TextField
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              fullWidth
+              margin="normal"
+              required
+              disabled={loading}
             />
+            <TextField
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              fullWidth
+              margin="normal"
+              required
+              disabled={loading}
+            />
+            
+            {error && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {error}
+              </Alert>
+            )}
+            
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              sx={{ mt: 2 }}
+              disabled={loading}
+            >
+              {loading ? <CircularProgress size={24} /> : "Login"}
+            </Button>
+            
+            <Box sx={{ mt: 2, textAlign: "center" }}>
+              <GoogleLogin
+                onSuccess={handleGoogleLogin}
+                onError={() => {
+                  console.error("Google login failed");
+                  setError("Google login failed. Please try again.");
+                }}
+                useOneTap
+              />
+            </Box>
+            
+            <Button
+              variant="text"
+              fullWidth
+              sx={{ mt: 1 }}
+              onClick={() => setIsSignup(true)}
+              disabled={loading}
+            >
+              Don't have an account? Sign up
+            </Button>
           </Box>
-          
-          <Button
-            variant="text"
-            fullWidth
-            sx={{ mt: 1 }}
-            onClick={() => setIsSignup(true)}
-            disabled={loading}
-          >
-            Don't have an account? Sign up
-          </Button>
         </Box>
-      </Box>
-    </ThemeProvider>
-  );
+      </ThemeProvider>
+    );
 };
 
 export default Login;
