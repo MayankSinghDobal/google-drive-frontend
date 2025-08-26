@@ -33,7 +33,7 @@ interface SignupResponse {
   message: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 const Signup: React.FC<SignupProps> = ({ onSignup, setIsSignup }) => {
   const [name, setName] = useState("");
@@ -86,6 +86,7 @@ const Signup: React.FC<SignupProps> = ({ onSignup, setIsSignup }) => {
         message: err.message,
         response: err.response?.data,
         status: err.response?.status,
+        headers: err.response?.headers,
       });
       setError(err.response?.data?.error || "Signup failed: Network error");
     } finally {
@@ -104,7 +105,7 @@ const Signup: React.FC<SignupProps> = ({ onSignup, setIsSignup }) => {
           alignItems: "center",
           p: 2,
         }}
-      />
+      >
         <Box sx={{ textAlign: "center" }}>
           <Typography variant="h4" gutterBottom>
             Sign Up for Google Drive Clone
@@ -187,6 +188,7 @@ const Signup: React.FC<SignupProps> = ({ onSignup, setIsSignup }) => {
             </Button>
           </Box>
         </Box>
+      </Box>
       </ThemeProvider>
   );
 };

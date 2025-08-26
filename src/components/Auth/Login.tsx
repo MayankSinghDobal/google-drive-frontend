@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   TextField,
@@ -6,6 +6,8 @@ import {
   Typography,
   CircularProgress,
   Alert,
+  Paper,
+  Divider,
 } from "@mui/material";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { GoogleLogin } from "@react-oauth/google";
@@ -34,29 +36,50 @@ interface LoginResponse {
   message: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'failed'>('unknown');
+
+  // Test connection on component mount
+  useEffect(() => {
+    testConnection();
+  }, []);
 
   const testConnection = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/test`, {
+      console.log('Testing connection to:', `${API_BASE_URL}/ping`);
+      
+      const response = await axios.get(`${API_BASE_URL}/ping`, {
+        timeout: 10000, // 10 second timeout
         withCredentials: true,
       });
+      
       console.log("Connection test successful:", response.data);
+      setConnectionStatus('connected');
+      setError(null);
       return true;
     } catch (err: any) {
       console.error("Connection test failed:", {
         message: err.message,
+        code: err.code,
         response: err.response?.data,
         status: err.response?.status,
-        headers: err.response?.headers,
       });
-      setError(`Connection test failed: ${err.message}`);
+      
+      setConnectionStatus('failed');
+      
+      if (err.code === 'ECONNREFUSED' || err.code === 'ERR_NETWORK') {
+        setError(`Cannot connect to server. Please ensure the backend is running on ${API_BASE_URL}`);
+      } else if (err.response?.status === 0) {
+        setError('CORS error: Backend server is not allowing requests from this origin');
+      } else {
+        setError(`Connection test failed: ${err.message}`);
+      }
       return false;
     }
   };
@@ -65,67 +88,118 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
+
+    // Test connection first
+    const isConnected = await testConnection();
+    if (!isConnected) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      console.log('Attempting login to:', `${API_BASE_URL}/auth/login`);
-      
+      console.log("Attempting login to:", `${API_BASE_URL}/auth/login`);
+
       const response = await axios.post<LoginResponse>(
         `${API_BASE_URL}/auth/login`,
         { email, password },
         {
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
           withCredentials: true,
+          timeout: 15000, // 15 second timeout
         }
       );
-      
-      console.log('Login successful:', response.data);
-      
+
+      console.log("Login successful:", response.data);
+
       const { token, user } = response.data;
       localStorage.setItem("token", token);
       onLogin(user);
     } catch (err: any) {
-      console.error('Login error:', {
+      console.error("Login error:", {
         message: err.message,
+        code: err.code,
         response: err.response?.data,
         status: err.response?.status,
       });
-      setError(err.response?.data?.error || "Login failed: Network error");
+      
+      if (err.code === 'ECONNREFUSED' || err.code === 'ERR_NETWORK') {
+        setError('Cannot connect to server. Please check if the backend is running.');
+      } else if (err.response?.status === 0) {
+        setError('CORS error: Please check server configuration');
+      } else {
+        setError(err.response?.data?.error || "Login failed: Network error");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = async (credentialResponse: any) => {
+    setLoading(true);
+    setError(null);
+    
+    // Test connection first
+    const isConnected = await testConnection();
+    if (!isConnected) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      console.log('Attempting Google login to:', `${API_BASE_URL}/auth/google`);
-      
+      console.log("Attempting Google login to:", `${API_BASE_URL}/auth/google`);
+
       const response = await axios.post<LoginResponse>(
         `${API_BASE_URL}/auth/google`,
         { token: credentialResponse.credential },
         {
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
           withCredentials: true,
+          timeout: 15000,
         }
       );
-      
-      console.log('Google login successful:', response.data);
-      
+
+      console.log("Google login successful:", response.data);
+
       const { token, user } = response.data;
       localStorage.setItem("token", token);
       onLogin(user);
     } catch (err: any) {
-      console.error('Google login error:', {
+      console.error("Google login error:", {
         message: err.message,
+        code: err.code,
         response: err.response?.data,
         status: err.response?.status,
       });
-      setError(err.response?.data?.error || "Google login failed: Network error");
+      
+      if (err.code === 'ECONNREFUSED' || err.code === 'ERR_NETWORK') {
+        setError('Cannot connect to server. Please check if the backend is running.');
+      } else if (err.response?.status === 0) {
+        setError('CORS error: Please check server configuration');
+      } else {
+        setError(err.response?.data?.error || "Google login failed: Network error");
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getConnectionStatusColor = () => {
+    switch (connectionStatus) {
+      case 'connected': return 'success';
+      case 'failed': return 'error';
+      default: return 'info';
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'connected': return '✅ Server Connected';
+      case 'failed': return '❌ Server Disconnected';
+      default: return '🔄 Testing Connection...';
     }
   };
 
@@ -140,30 +214,36 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
           alignItems: "center",
           p: 2,
         }}
-      />
-        <Box sx={{ textAlign: "center" }}>
-          <Typography variant="h4" gutterBottom>
+      >
+        <Paper elevation={3} sx={{ p: 4, maxWidth: 500, width: "100%" }}>
+          <Typography variant="h4" gutterBottom align="center">
             Login to Google Drive Clone
           </Typography>
-          
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            API URL: {API_BASE_URL}
-          </Typography>
-          
+
+          {/* Connection Status */}
+          <Alert 
+            severity={getConnectionStatusColor()} 
+            sx={{ mb: 2 }}
+          >
+            {getConnectionStatusText()}
+            <br />
+            <Typography variant="caption">
+              API URL: {API_BASE_URL}
+            </Typography>
+          </Alert>
+
+          {/* Manual connection test button */}
           <Button
             variant="outlined"
             onClick={testConnection}
-            sx={{ mb: 2 }}
+            sx={{ mb: 2, width: '100%' }}
             size="small"
+            disabled={loading}
           >
-            Test Connection
+            Test Server Connection
           </Button>
 
-          <Box
-            component="form"
-            onSubmit={handleSubmit}
-            sx={{ maxWidth: 400, width: "100%" }}
-          >
+          <Box component="form" onSubmit={handleSubmit}>
             <TextField
               label="Email"
               type="email"
@@ -172,7 +252,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
               fullWidth
               margin="normal"
               required
-              disabled={loading}
+              disabled={loading || connectionStatus === 'failed'}
             />
             <TextField
               label="Password"
@@ -182,36 +262,47 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
               fullWidth
               margin="normal"
               required
-              disabled={loading}
+              disabled={loading || connectionStatus === 'failed'}
             />
-            
+
             {error && (
               <Alert severity="error" sx={{ mt: 2 }}>
                 {error}
               </Alert>
             )}
-            
+
             <Button
               type="submit"
               variant="contained"
               fullWidth
               sx={{ mt: 2 }}
-              disabled={loading}
+              disabled={loading || connectionStatus === 'failed'}
             >
               {loading ? <CircularProgress size={24} /> : "Login"}
             </Button>
-            
-            <Box sx={{ mt: 2, textAlign: "center" }}>
-              <GoogleLogin
-                onSuccess={handleGoogleLogin}
-                onError={() => {
-                  console.error("Google login failed");
-                  setError("Google login failed. Please try again.");
-                }}
-                useOneTap
-              />
+
+            <Divider sx={{ my: 2 }}>OR</Divider>
+
+            {/* Google Login */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+              {connectionStatus === 'connected' ? (
+                <GoogleLogin
+                  onSuccess={handleGoogleLogin}
+                  onError={() => setError("Google login failed")}
+                  useOneTap={false}
+                  auto_select={false}
+                  ux_mode="popup"
+                  context="signin"
+                  size="large"
+                  theme="outline"
+                />
+              ) : (
+                <Alert severity="warning" sx={{ width: '100%' }}>
+                  Google login requires server connection
+                </Alert>
+              )}
             </Box>
-            
+
             <Button
               variant="text"
               fullWidth
@@ -222,9 +313,22 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
               Don't have an account? Sign up
             </Button>
           </Box>
-        </Box>
-      </ThemeProvider>
-    );
+
+          {/* Debug information in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <Box sx={{ mt: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+              <Typography variant="caption" component="div">
+                <strong>Debug Info:</strong><br />
+                API URL: {API_BASE_URL}<br />
+                Connection: {connectionStatus}<br />
+                Google Client ID: {import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Set' : 'Missing'}
+              </Typography>
+            </Box>
+          )}
+        </Paper>
+      </Box>
+    </ThemeProvider>
+  );
 };
 
 export default Login;

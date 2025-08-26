@@ -12,7 +12,7 @@ interface AuthResponse {
   user: User;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 // Configure axios defaults
 axios.defaults.withCredentials = true;
@@ -32,7 +32,7 @@ const App: React.FC = () => {
       }
 
       try {
-        console.log('Checking auth status...');
+        console.log('Checking auth status:', `${API_BASE_URL}/auth/me`);
         const response = await axios.get<AuthResponse>(
           `${API_BASE_URL}/auth/me`,
           {
@@ -46,8 +46,12 @@ const App: React.FC = () => {
         
         console.log('Auth check successful:', response.data);
         setUser(response.data.user);
-      } catch (error) {
-        console.error('Auth check failed:', error);
+      } catch (error: any) {
+        console.error('Auth check failed:', {
+          message: error.message || 'Unknown error',
+          response: error.response?.data,
+          status: error.response?.status,
+        });
         localStorage.removeItem("token");
         setUser(null);
       } finally {
@@ -69,7 +73,6 @@ const App: React.FC = () => {
     setIsSignup(false);
   };
 
-  // Show loading while checking authentication
   if (loading) {
     return (
       <div style={{ 

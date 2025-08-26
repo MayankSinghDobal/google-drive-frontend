@@ -1,21 +1,29 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
-    fs: {
-      // Allow serving files from one level up from the project root
-      allow: ['..']
+    port: 5173,
+    host: true, // Allow external connections
+    cors: true,
+    headers: {
+      // Fix Cross-Origin-Opener-Policy for OAuth popups
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none'
     }
   },
-  optimizeDeps: {
-    // Force pre-bundling to avoid the rename issue
-    force: true
+  preview: {
+    port: 5173,
+    host: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none'
+    }
   },
-  // Alternative: disable dependency pre-bundling entirely for development
-  // optimizeDeps: {
-  //   disabled: true
-  // }
+  define: {
+    // Ensure environment variables are properly defined
+    'process.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(process.env.VITE_GOOGLE_CLIENT_ID),
+    'process.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL)
+  }
 })
