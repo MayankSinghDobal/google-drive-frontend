@@ -27,8 +27,8 @@ import {
   uploadFile,
   shareFile,
   logout,
+  createFolder, // Add this import
 } from "../../services/api";
-import axios from "axios";
 
 const theme = createTheme({
   palette: {
@@ -63,51 +63,65 @@ const Layout: React.FC = () => {
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const userData = await getUser();
-        setUser(userData);
-        const fetchedItems = await getFilesAndFolders(selectedFolder);
-        setItems(fetchedItems);
-        setFolders(
-          fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
-        );
-      } catch (err) {
-        setError("Failed to load data. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('Loading data for folder:', selectedFolder);
+      
+      // Load user and items
+      const [userData, fetchedItems] = await Promise.all([
+        getUser(),
+        getFilesAndFolders(selectedFolder)
+      ]);
+      
+      console.log('User data:', userData);
+      console.log('Fetched items:', fetchedItems);
+      
+      setUser(userData);
+      setItems(fetchedItems);
+      setFolders(
+        fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
+      );
+    } catch (err: any) {
+      console.error('Failed to load data:', err);
+      setError(err.response?.data?.error || "Failed to load data. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }, [selectedFolder]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
-    if (query) {
+    if (query.trim()) {
       try {
         const searchResults = await searchItems(query);
         setItems(searchResults);
-      } catch (err) {
+      } catch (err: any) {
         setSnackbar({
           open: true,
-          message: "Search failed. Please try again.",
+          message: err.response?.data?.error || "Search failed. Please try again.",
           severity: "error",
         });
       }
     } else {
-      const fetchedItems = await getFilesAndFolders(selectedFolder);
-      setItems(fetchedItems);
+      // Reload original data
+      loadData();
     }
   };
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    
     try {
       setUploadProgress(0);
       const file = files[0];
+      
       const config = {
         onUploadProgress: (progressEvent: ProgressEvent) => {
           const percent = Math.round(
@@ -116,21 +130,21 @@ const Layout: React.FC = () => {
           setUploadProgress(percent);
         },
       };
+      
       await uploadFile(file, selectedFolder, config);
+      
       setSnackbar({
         open: true,
         message: "File uploaded successfully!",
         severity: "success",
       });
-      const fetchedItems = await getFilesAndFolders(selectedFolder);
-      setItems(fetchedItems);
-      setFolders(
-        fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
-      );
-    } catch (err) {
+      
+      // Reload data
+      await loadData();
+    } catch (err: any) {
       setSnackbar({
         open: true,
-        message: "Upload failed. Please try again.",
+        message: err.response?.data?.error || "Upload failed. Please try again.",
         severity: "error",
       });
     } finally {
@@ -139,7 +153,7 @@ const Layout: React.FC = () => {
   };
 
   const handleCreateFolder = async () => {
-    if (!newFolderName) {
+    if (!newFolderName.trim()) {
       setSnackbar({
         open: true,
         message: "Folder name is required.",
@@ -147,30 +161,26 @@ const Layout: React.FC = () => {
       });
       return;
     }
+    
     try {
-      await axios.post(
-        "https://google-drive-backend-ten.vercel.app/folders/create",
-        { name: newFolderName, parent_id: selectedFolder },
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        }
-      );
+      await createFolder(newFolderName, selectedFolder);
+      
       setSnackbar({
         open: true,
         message: "Folder created successfully!",
         severity: "success",
       });
-      const fetchedItems = await getFilesAndFolders(selectedFolder);
-      setItems(fetchedItems);
-      setFolders(
-        fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
-      );
+      
+      // Reload data
+      await loadData();
+      
       setFolderDialogOpen(false);
       setNewFolderName("");
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Create folder error:', err);
       setSnackbar({
         open: true,
-        message: "Folder creation failed. Please try again.",
+        message: err.response?.data?.error || "Folder creation failed. Please try again.",
         severity: "error",
       });
     }
@@ -178,9 +188,9 @@ const Layout: React.FC = () => {
 
   const handleShare = async (id: number) => {
     const email = prompt("Enter email to share with:");
-    if (email && typeof email === "string") {
+    if (email && typeof email === "string" && email.trim()) {
       try {
-        await shareFile(id, email, "view");
+        await shareFile(id, email.trim(), "view");
         setSnackbar({
           open: true,
           message: "File shared successfully!",
@@ -189,14 +199,14 @@ const Layout: React.FC = () => {
       } catch (err: any) {
         setSnackbar({
           open: true,
-          message: err.response?.data?.message || "Sharing failed. Please try again.",
+          message: err.response?.data?.error || "Sharing failed. Please try again.",
           severity: "error",
         });
       }
-    } else {
+    } else if (email !== null) {
       setSnackbar({
         open: true,
-        message: "Email is required to share the file.",
+        message: "Valid email is required to share the file.",
         severity: "error",
       });
     }
@@ -208,12 +218,13 @@ const Layout: React.FC = () => {
       setUser(null);
       setItems([]);
       setFolders([]);
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: "Logout failed. Please try again.",
-        severity: "error",
-      });
+      localStorage.removeItem("token");
+      window.location.reload(); // Force reload to go back to login
+    } catch (err: any) {
+      console.error('Logout error:', err);
+      // Force logout even if server request fails
+      localStorage.removeItem("token");
+      window.location.reload();
     }
   };
 
@@ -221,7 +232,7 @@ const Layout: React.FC = () => {
     e.preventDefault();
     setIsDragging(false);
     handleUpload(e.dataTransfer.files);
-  }, []);
+  }, [selectedFolder]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -240,23 +251,42 @@ const Layout: React.FC = () => {
     const crumbs: { id: number | null; name: string }[] = [
       { id: null, name: "My Drive" },
     ];
+    
     if (selectedFolder) {
+      // Build path from current folder back to root
       let currentFolder = folders.find((f: Folder) => f.id === selectedFolder);
       const path: { id: number; name: string }[] = [];
+      
       while (currentFolder) {
         path.unshift({ id: currentFolder.id, name: currentFolder.name });
         currentFolder = folders.find((f: Folder) => f.id === currentFolder!.parent_id);
       }
+      
       crumbs.push(...path);
     }
+    
     return crumbs;
   };
+
+  // Filter items based on current folder and search
+  const filteredItems = items.filter((item: Item) => {
+    // Apply folder filter
+    const folderMatch = selectedFolder === null 
+      ? (item.type === "file" ? item.folder_id === null : item.parent_id === null)
+      : (item.type === "file" ? item.folder_id === selectedFolder : item.parent_id === selectedFolder);
+    
+    // Apply search filter
+    const searchMatch = !searchQuery || 
+      item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return folderMatch && searchMatch;
+  });
 
   if (loading) {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+        <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
           <CircularProgress />
         </Box>
       </ThemeProvider>
@@ -269,6 +299,9 @@ const Layout: React.FC = () => {
         <CssBaseline />
         <Box sx={{ p: 4, textAlign: "center" }}>
           <Typography color="error">{error}</Typography>
+          <Button onClick={loadData} sx={{ mt: 2 }}>
+            Retry
+          </Button>
         </Box>
       </ThemeProvider>
     );
@@ -296,6 +329,7 @@ const Layout: React.FC = () => {
             user={user}
             onLogout={handleLogout}
           />
+          
           <Box sx={{ p: 2 }}>
             <Breadcrumbs>
               {getBreadcrumbs().map((crumb, index) => (
@@ -314,6 +348,7 @@ const Layout: React.FC = () => {
                 </Link>
               ))}
             </Breadcrumbs>
+            
             <Button
               variant="contained"
               onClick={() => setFolderDialogOpen(true)}
@@ -322,6 +357,7 @@ const Layout: React.FC = () => {
               New Folder
             </Button>
           </Box>
+          
           <Box
             sx={{
               border: isDragging ? "2px dashed #4285f4" : "1px dashed #ccc",
@@ -344,6 +380,7 @@ const Layout: React.FC = () => {
                 ? "Drop files here"
                 : "Drag and drop files here or click Upload"}
             </Typography>
+            
             {uploadProgress > 0 && (
               <Box sx={{ mt: 2 }}>
                 <Typography>Upload Progress: {uploadProgress}%</Typography>
@@ -366,21 +403,18 @@ const Layout: React.FC = () => {
               </Box>
             )}
           </Box>
+          
           <FileList
-            items={items.filter(
-              (item: Item) =>
-                (selectedFolder === null ||
-                  (item.type === "file" && item.folder_id === selectedFolder) ||
-                  (item.type === "folder" &&
-                    item.parent_id === selectedFolder)) &&
-                (!searchQuery ||
-                  item.name.toLowerCase().includes(searchQuery.toLowerCase()))
-            )}
+            items={filteredItems}
             onShare={handleShare}
           />
+          
           <Dialog
             open={folderDialogOpen}
-            onClose={() => setFolderDialogOpen(false)}
+            onClose={() => {
+              setFolderDialogOpen(false);
+              setNewFolderName("");
+            }}
           >
             <DialogTitle>Create New Folder</DialogTitle>
             <DialogContent>
@@ -391,15 +425,28 @@ const Layout: React.FC = () => {
                 fullWidth
                 margin="normal"
                 required
+                autoFocus
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setFolderDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreateFolder} variant="contained">
+              <Button 
+                onClick={() => {
+                  setFolderDialogOpen(false);
+                  setNewFolderName("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleCreateFolder} 
+                variant="contained"
+                disabled={!newFolderName.trim()}
+              >
                 Create
               </Button>
             </DialogActions>
           </Dialog>
+          
           <Snackbar
             open={snackbar.open}
             autoHideDuration={6000}

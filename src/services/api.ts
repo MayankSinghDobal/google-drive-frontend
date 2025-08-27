@@ -7,6 +7,12 @@ interface AuthMeResponse {
 
 interface FilesResponse {
   files: (CustomFile | Folder)[];
+  pagination?: {
+    page: number;
+    limit: number;
+    totalItems: number;
+    totalPages: number;
+  };
 }
 
 interface SearchResponse {
@@ -16,13 +22,15 @@ interface SearchResponse {
 interface UploadResponse {
   file: CustomFile;
   message: string;
+  publicUrl: string;
 }
 
 interface ShareResponse {
   message: string;
+  permission: any;
+  shareableLink: string;
 }
 
-// Use environment variable or default to localhost
 const baseURL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
 
 const api = axios.create({
@@ -30,7 +38,8 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  withCredentials: true, // Important for CORS with credentials
+  withCredentials: true,
+  timeout: 30000, // 30 second timeout
 });
 
 api.interceptors.request.use((config) => {
@@ -38,13 +47,25 @@ api.interceptors.request.use((config) => {
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`, {
+    headers: config.headers?.Authorization ? 'Bearer ***' : 'None',
+  });
   return config;
 });
 
-// Add response interceptor to handle auth errors
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
   (error) => {
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
       window.location.href = "/";
@@ -59,12 +80,22 @@ export const getUser = async (): Promise<User> => {
 };
 
 export const getFilesAndFolders = async (
-  folderId: number | null
+  folderId: number | null = null
 ): Promise<(CustomFile | Folder)[]> => {
   const response = await api.get<FilesResponse>("/files", {
-    params: { folder_id: folderId },
+    params: folderId ? { folder_id: folderId } : {},
   });
-  return response.data.files;
+  
+  // Handle both files and folders, add type property
+  const items = (response.data.files || []).map(item => {
+    if ('size' in item) {
+      return { ...item, type: 'file' as const };
+    } else {
+      return { ...item, type: 'folder' as const };
+    }
+  });
+  
+  return items;
 };
 
 export const searchItems = async (
@@ -78,7 +109,7 @@ export const searchItems = async (
 
 export const uploadFile = async (
   file: globalThis.File,
-  folderId: number | null,
+  folderId: number | null = null,
   config: { onUploadProgress?: (progressEvent: ProgressEvent) => void } = {}
 ): Promise<UploadResponse> => {
   const formData = new FormData();
@@ -86,6 +117,7 @@ export const uploadFile = async (
   if (folderId) {
     formData.append("folder_id", folderId.toString());
   }
+  
   const response = await api.post<UploadResponse>("/files/upload", formData, {
     headers: { "Content-Type": "multipart/form-data" },
     ...config,
@@ -96,7 +128,7 @@ export const uploadFile = async (
 export const shareFile = async (
   fileId: number,
   email: string,
-  role: "view" | "edit"
+  role: "view" | "edit" = "view"
 ): Promise<ShareResponse> => {
   const response = await api.post<ShareResponse>(`/files/${fileId}/share`, {
     email,
@@ -105,11 +137,21 @@ export const shareFile = async (
   return response.data;
 };
 
+export const createFolder = async (
+  name: string,
+  parentId: number | null = null
+): Promise<{ folder: Folder; message: string }> => {
+  const response = await api.post<{ folder: Folder; message: string }>("/folders/create", {
+    name,
+    parent_id: parentId,
+  });
+  return response.data;
+};
+
 export const logout = async (): Promise<void> => {
   try {
     await api.post("/auth/logout");
   } catch (error) {
-    // Even if logout fails on server, clear local token
     console.warn("Logout request failed:", error);
   } finally {
     localStorage.removeItem("token");

@@ -36,7 +36,7 @@ interface LoginResponse {
   message: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
 
 const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
   const [email, setEmail] = useState("");
@@ -45,7 +45,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
   const [loading, setLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'failed'>('unknown');
 
-  // Test connection on component mount
   useEffect(() => {
     testConnection();
   }, []);
@@ -55,7 +54,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
       console.log('Testing connection to:', `${API_BASE_URL}/ping`);
       
       const response = await axios.get(`${API_BASE_URL}/ping`, {
-        timeout: 10000, // 10 second timeout
+        timeout: 10000,
         withCredentials: true,
       });
       
@@ -74,7 +73,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
       setConnectionStatus('failed');
       
       if (err.code === 'ECONNREFUSED' || err.code === 'ERR_NETWORK') {
-        setError(`Cannot connect to server. Please ensure the backend is running on ${API_BASE_URL}`);
+        setError(`Cannot connect to server. Please ensure the backend is running.`);
       } else if (err.response?.status === 0) {
         setError('CORS error: Backend server is not allowing requests from this origin');
       } else {
@@ -86,10 +85,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!email || !password) {
+      setError("Email and password are required");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    // Test connection first
     const isConnected = await testConnection();
     if (!isConnected) {
       setLoading(false);
@@ -107,7 +111,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
             "Content-Type": "application/json",
           },
           withCredentials: true,
-          timeout: 15000, // 15 second timeout
+          timeout: 15000,
         }
       );
 
@@ -129,7 +133,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
       } else if (err.response?.status === 0) {
         setError('CORS error: Please check server configuration');
       } else {
-        setError(err.response?.data?.error || "Login failed: Network error");
+        setError(err.response?.data?.error || "Login failed: Please check your credentials");
       }
     } finally {
       setLoading(false);
@@ -140,7 +144,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
     setLoading(true);
     setError(null);
     
-    // Test connection first
     const isConnected = await testConnection();
     if (!isConnected) {
       setLoading(false);
@@ -180,7 +183,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
       } else if (err.response?.status === 0) {
         setError('CORS error: Please check server configuration');
       } else {
-        setError(err.response?.data?.error || "Google login failed: Network error");
+        setError(err.response?.data?.error || "Google login failed");
       }
     } finally {
       setLoading(false);
@@ -220,7 +223,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
             Login to Google Drive Clone
           </Typography>
 
-          {/* Connection Status */}
           <Alert 
             severity={getConnectionStatusColor()} 
             sx={{ mb: 2 }}
@@ -232,7 +234,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
             </Typography>
           </Alert>
 
-          {/* Manual connection test button */}
           <Button
             variant="outlined"
             onClick={testConnection}
@@ -283,7 +284,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
 
             <Divider sx={{ my: 2 }}>OR</Divider>
 
-            {/* Google Login */}
             <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
               {connectionStatus === 'connected' ? (
                 <GoogleLogin
@@ -313,18 +313,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, setIsSignup }) => {
               Don't have an account? Sign up
             </Button>
           </Box>
-
-          {/* Debug information in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <Box sx={{ mt: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="caption" component="div">
-                <strong>Debug Info:</strong><br />
-                API URL: {API_BASE_URL}<br />
-                Connection: {connectionStatus}<br />
-                Google Client ID: {import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Set' : 'Missing'}
-              </Typography>
-            </Box>
-          )}
         </Paper>
       </Box>
     </ThemeProvider>
