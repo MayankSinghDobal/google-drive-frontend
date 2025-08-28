@@ -27,7 +27,7 @@ import {
   uploadFile,
   shareFile,
   logout,
-  createFolder, // Add this import
+  createFolder,
 } from "../../services/api";
 
 const theme = createTheme({
@@ -115,6 +115,7 @@ const Layout: React.FC = () => {
     }
   };
 
+  // FIX: Upload with proper folder handling
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
@@ -131,6 +132,7 @@ const Layout: React.FC = () => {
         },
       };
       
+      // FIX: Pass selectedFolder to uploadFile
       await uploadFile(file, selectedFolder, config);
       
       setSnackbar({
@@ -186,29 +188,41 @@ const Layout: React.FC = () => {
     }
   };
 
+  // FIX: Updated share function to create shareable links
   const handleShare = async (id: number) => {
-    const email = prompt("Enter email to share with:");
-    if (email && typeof email === "string" && email.trim()) {
+    try {
+      const response = await shareFile(id, "view"); // Create a view-only share link
+      
+      // Copy link to clipboard and show user
+      const shareLink = response.shareableLink;
+      await navigator.clipboard.writeText(shareLink);
+      
+      setSnackbar({
+        open: true,
+        message: `Share link copied to clipboard: ${shareLink}`,
+        severity: "success",
+      });
+    } catch (err: any) {
+      // Fallback if clipboard API fails
       try {
-        await shareFile(id, email.trim(), "view");
+        const response = await shareFile(id, "view");
+        const shareLink = response.shareableLink;
+        
+        // Show modal with link if clipboard fails
+        alert(`Share this link: ${shareLink}`);
+        
         setSnackbar({
           open: true,
           message: "File shared successfully!",
           severity: "success",
         });
-      } catch (err: any) {
+      } catch (shareErr: any) {
         setSnackbar({
           open: true,
-          message: err.response?.data?.error || "Sharing failed. Please try again.",
+          message: shareErr.response?.data?.error || "Sharing failed. Please try again.",
           severity: "error",
         });
       }
-    } else if (email !== null) {
-      setSnackbar({
-        open: true,
-        message: "Valid email is required to share the file.",
-        severity: "error",
-      });
     }
   };
 

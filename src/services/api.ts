@@ -105,6 +105,7 @@ export const searchItems = async (
   return response.data.results;
 };
 
+// FIX: Upload file with proper folder handling
 export const uploadFile = async (
   file: globalThis.File,
   folderId: number | null = null,
@@ -112,7 +113,9 @@ export const uploadFile = async (
 ): Promise<UploadResponse> => {
   const formData = new FormData();
   formData.append("file", file);
-  if (folderId) {
+  
+  // FIX: Properly append folder_id if provided
+  if (folderId !== null) {
     formData.append("folder_id", folderId.toString());
   }
   
@@ -123,14 +126,13 @@ export const uploadFile = async (
   return response.data;
 };
 
+// FIX: Share file with role instead of email
 export const shareFile = async (
   fileId: number,
-  email: string,
   role: "view" | "edit" = "view"
 ): Promise<ShareResponse> => {
   const response = await api.post<ShareResponse>(`/files/${fileId}/share`, {
-    email,
-    role,
+    role, // Remove email parameter since you're creating public share links
   });
   return response.data;
 };
