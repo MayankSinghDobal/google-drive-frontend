@@ -82,9 +82,7 @@ export const getUser = async (): Promise<User> => {
 export const getFilesAndFolders = async (
   folderId: number | null = null
 ): Promise<(CustomFile | Folder)[]> => {
-  const response = await api.get<FilesResponse>("/files", {
-    params: folderId ? { folder_id: folderId } : {},
-  });
+  const response = await api.get<FilesResponse>("/files/with-folders");
   
   // Handle both files and folders, add type property
   const items = (response.data.files || []).map(item => {
