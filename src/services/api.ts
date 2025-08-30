@@ -105,7 +105,6 @@ export const searchItems = async (
   return response.data.results;
 };
 
-// FIX: Upload file with proper folder handling
 export const uploadFile = async (
   file: globalThis.File,
   folderId: number | null = null,
@@ -114,7 +113,6 @@ export const uploadFile = async (
   const formData = new FormData();
   formData.append("file", file);
   
-  // FIX: Properly append folder_id if provided
   if (folderId !== null) {
     formData.append("folder_id", folderId.toString());
   }
@@ -126,13 +124,12 @@ export const uploadFile = async (
   return response.data;
 };
 
-// FIX: Share file with role instead of email
 export const shareFile = async (
   fileId: number,
   role: "view" | "edit" = "view"
 ): Promise<ShareResponse> => {
   const response = await api.post<ShareResponse>(`/files/${fileId}/share`, {
-    role, // Remove email parameter since you're creating public share links
+    role,
   });
   return response.data;
 };
@@ -145,6 +142,70 @@ export const createFolder = async (
     name,
     parent_id: parentId,
   });
+  return response.data;
+};
+
+// NEW: Delete file function
+export const deleteFile = async (fileId: number): Promise<{ message: string }> => {
+  const response = await api.delete<{ message: string }>(`/files/${fileId}`);
+  return response.data;
+};
+
+// NEW: Delete folder function
+export const deleteFolder = async (folderId: number): Promise<{ message: string }> => {
+  const response = await api.delete<{ message: string }>(`/folders/${folderId}`);
+  return response.data;
+};
+
+// NEW: Move file to folder
+export const moveFile = async (
+  fileId: number,
+  targetFolderId: number | null
+): Promise<{ file: CustomFile; message: string }> => {
+  const response = await api.patch<{ file: CustomFile; message: string }>(`/files/${fileId}`, {
+    folder_id: targetFolderId,
+  });
+  return response.data;
+};
+
+// NEW: Rename file
+export const renameFile = async (
+  fileId: number,
+  newName: string
+): Promise<{ file: CustomFile; message: string }> => {
+  const response = await api.patch<{ file: CustomFile; message: string }>(`/files/${fileId}`, {
+    name: newName,
+  });
+  return response.data;
+};
+
+// NEW: Rename folder
+export const renameFolder = async (
+  folderId: number,
+  newName: string
+): Promise<{ folder: Folder; message: string }> => {
+  const response = await api.patch<{ folder: Folder; message: string }>(`/folders/${folderId}`, {
+    name: newName,
+  });
+  return response.data;
+};
+
+// NEW: Move folder
+export const moveFolder = async (
+  folderId: number,
+  targetParentId: number | null
+): Promise<{ folder: Folder; message: string }> => {
+  const response = await api.patch<{ folder: Folder; message: string }>(`/folders/${folderId}`, {
+    parent_id: targetParentId,
+  });
+  return response.data;
+};
+
+// NEW: Get signed URL for secure download
+export const getSecureDownloadUrl = async (
+  fileId: number
+): Promise<{ signedUrl: string; fileName: string }> => {
+  const response = await api.get<{ signedUrl: string; fileName: string }>(`/files/${fileId}/download`);
   return response.data;
 };
 

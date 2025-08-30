@@ -53,7 +53,7 @@ const Layout: React.FC = () => {
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
-    severity: "success" | "error";
+    severity: "success" | "error" | "info";
   }>({
     open: false,
     message: "",
@@ -115,7 +115,6 @@ const Layout: React.FC = () => {
     }
   };
 
-  // FIX: Upload with proper folder handling
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
@@ -132,7 +131,6 @@ const Layout: React.FC = () => {
         },
       };
       
-      // FIX: Pass selectedFolder to uploadFile
       await uploadFile(file, selectedFolder, config);
       
       setSnackbar({
@@ -188,41 +186,54 @@ const Layout: React.FC = () => {
     }
   };
 
-  // FIX: Updated share function to create shareable links
   const handleShare = async (id: number) => {
     try {
-      const response = await shareFile(id, "view"); // Create a view-only share link
+      const response = await shareFile(id, "view");
       
-      // Copy link to clipboard and show user
       const shareLink = response.shareableLink;
-      await navigator.clipboard.writeText(shareLink);
       
-      setSnackbar({
-        open: true,
-        message: `Share link copied to clipboard: ${shareLink}`,
-        severity: "success",
-      });
-    } catch (err: any) {
-      // Fallback if clipboard API fails
+      // Try to copy to clipboard
       try {
-        const response = await shareFile(id, "view");
-        const shareLink = response.shareableLink;
-        
-        // Show modal with link if clipboard fails
-        alert(`Share this link: ${shareLink}`);
-        
+        await navigator.clipboard.writeText(shareLink);
         setSnackbar({
           open: true,
-          message: "File shared successfully!",
+          message: "Share link copied to clipboard!",
           severity: "success",
         });
-      } catch (shareErr: any) {
-        setSnackbar({
-          open: true,
-          message: shareErr.response?.data?.error || "Sharing failed. Please try again.",
-          severity: "error",
-        });
+      } catch (clipboardErr) {
+        // Fallback: show link in a dialog or alert
+        const userConfirmed = window.confirm(
+          `Share link created! Click OK to copy:\n\n${shareLink}`
+        );
+        if (userConfirmed) {
+          // Try manual selection
+          const textArea = document.createElement("textarea");
+          textArea.value = shareLink;
+          document.body.appendChild(textArea);
+          textArea.select();
+          try {
+            document.execCommand('copy');
+            setSnackbar({
+              open: true,
+              message: "Share link copied to clipboard!",
+              severity: "success",
+            });
+          } catch (fallbackErr) {
+            setSnackbar({
+              open: true,
+              message: `Share link created: ${shareLink}`,
+              severity: "info",
+            });
+          }
+          document.body.removeChild(textArea);
+        }
       }
+    } catch (err: any) {
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.error || "Sharing failed. Please try again.",
+        severity: "error",
+      });
     }
   };
 
@@ -261,6 +272,14 @@ const Layout: React.FC = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
+  // Enhanced folder navigation with proper hierarchy
+  const handleFolderClick = (item: Item) => {
+    if (item.type === "folder") {
+      setSelectedFolder(item.id);
+      setSearchQuery(""); // Clear search when navigating
+    }
+  };
+
   const getBreadcrumbs = () => {
     const crumbs: { id: number | null; name: string }[] = [
       { id: null, name: "My Drive" },
@@ -282,18 +301,25 @@ const Layout: React.FC = () => {
     return crumbs;
   };
 
-  // Filter items based on current folder and search
+  // Filter items based on current folder and search - FIXED LOGIC
   const filteredItems = items.filter((item: Item) => {
-    // Apply folder filter
-    const folderMatch = selectedFolder === null 
-      ? (item.type === "file" ? item.folder_id === null : item.parent_id === null)
-      : (item.type === "file" ? item.folder_id === selectedFolder : item.parent_id === selectedFolder);
+    // Apply search filter first
+    if (searchQuery) {
+      return item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    }
     
-    // Apply search filter
-    const searchMatch = !searchQuery || 
-      item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return folderMatch && searchMatch;
+    // Apply folder filter when not searching
+    if (selectedFolder === null) {
+      // Show root level items
+      return item.type === "file" 
+        ? (item.folder_id === null || item.folder_id === undefined)
+        : (item.parent_id === null || item.parent_id === undefined);
+    } else {
+      // Show items in selected folder
+      return item.type === "file" 
+        ? item.folder_id === selectedFolder 
+        : item.parent_id === selectedFolder;
+    }
   });
 
   if (loading) {
@@ -328,7 +354,10 @@ const Layout: React.FC = () => {
         <Sidebar
           folders={folders}
           selectedFolder={selectedFolder}
-          onFolderSelect={setSelectedFolder}
+          onFolderSelect={(folderId) => {
+            setSelectedFolder(folderId);
+            setSearchQuery(""); // Clear search when navigating via sidebar
+          }}
         />
         <Box sx={{ flexGrow: 1 }}>
           <TopBar
@@ -355,7 +384,10 @@ const Layout: React.FC = () => {
                       ? "text.primary"
                       : "inherit"
                   }
-                  onClick={() => setSelectedFolder(crumb.id)}
+                  onClick={() => {
+                    setSelectedFolder(crumb.id);
+                    setSearchQuery(""); // Clear search when using breadcrumbs
+                  }}
                   sx={{ cursor: "pointer" }}
                 >
                   {crumb.name}
@@ -420,7 +452,10 @@ const Layout: React.FC = () => {
           
           <FileList
             items={filteredItems}
+            folders={folders}
             onShare={handleShare}
+            onRefresh={loadData}
+            currentFolder={selectedFolder}
           />
           
           <Dialog

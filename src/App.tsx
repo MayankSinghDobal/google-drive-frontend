@@ -5,6 +5,7 @@ import Layout from "./components/Layout/Layout";
 import Login from "./components/Auth/Login";
 import Signup from "./components/Auth/Signup";
 import Callback from "./components/Auth/Callback";
+import SharedFile from "./components/SharedFile/SharedFile"; // NEW IMPORT
 import axios from "axios";
 import type { User } from "./types";
 
@@ -124,6 +125,11 @@ const App: React.FC = () => {
           <Route
             path="/auth/callback"
             element={<Callback onLogin={handleAuth} />}
+          />
+          {/* NEW ROUTE FOR SHARED FILES */}
+          <Route
+            path="/share/:shareToken"
+            element={<SharedFile />}
           />
         </Routes>
       </Router>
