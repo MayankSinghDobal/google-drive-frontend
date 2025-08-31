@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { getFileTypeInfo, canPreviewFile } from "../../utils/fileTypes";
+import PreviewDialog from "../Preview/PreviewDialog";
 import {
   Card,
   CardContent,
@@ -51,6 +53,7 @@ interface FileListProps {
   onShare: (id: number) => void;
   onRefresh: () => Promise<void>;
   currentFolder: number | null;
+  onItemClick: (item: Item) => void;
 }
 
 const FileList: React.FC<FileListProps> = ({
@@ -59,11 +62,10 @@ const FileList: React.FC<FileListProps> = ({
   onShare,
   onRefresh,
   currentFolder,
+  onItemClick,
 }) => {
+  const [previewItem, setPreviewItem] = useState<Item | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewType, setPreviewType] = useState<string>("");
-  const [previewName, setPreviewName] = useState<string>("");
 
   // Menu state
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -73,6 +75,9 @@ const FileList: React.FC<FileListProps> = ({
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  
+  // Clipboard state
+  const [clipboardItems, setClipboardItems] = useState<{id: number, type: 'file'|'folder', operation: 'copy'|'cut'}[]>([]);
 
   // Form states
   const [newName, setNewName] = useState("");
@@ -95,28 +100,8 @@ const FileList: React.FC<FileListProps> = ({
   };
 
   const handlePreview = (item: Item) => {
-    if (item.type === "file" && "publicUrl" in item && item.publicUrl) {
-      const format = item.format.toLowerCase();
-
-      if (format.includes("image")) {
-        setPreviewType("image");
-        setPreviewUrl(item.publicUrl);
-        setPreviewName(item.name);
-        setPreviewOpen(true);
-      } else if (format === "application/pdf") {
-        setPreviewType("pdf");
-        setPreviewUrl(item.publicUrl);
-        setPreviewName(item.name);
-        setPreviewOpen(true);
-      } else if (format.includes("text")) {
-        setPreviewType("text");
-        setPreviewUrl(item.publicUrl);
-        setPreviewName(item.name);
-        setPreviewOpen(true);
-      } else {
-        handleSecureDownload(item);
-      }
-    }
+    setPreviewItem(item);
+    setPreviewOpen(true);
   };
 
   const handleSecureDownload = async (item: Item) => {
@@ -221,32 +206,31 @@ const FileList: React.FC<FileListProps> = ({
     }
   };
 
+  // Copy/Cut handlers (placeholders for now)
+  const handleCopy = (item: Item | null) => {
+    if (!item) return;
+    setClipboardItems([{ id: item.id, type: item.type, operation: 'copy' }]);
+    handleMenuClose();
+    console.log("Copied:", item.name);
+  };
+
+  const handleCut = (item: Item | null) => {
+    if (!item) return;
+    setClipboardItems([{ id: item.id, type: item.type, operation: 'cut' }]);
+    handleMenuClose();
+    console.log("Cut:", item.name);
+  };
+
   const handleClosePreview = () => {
     setPreviewOpen(false);
-    setPreviewUrl(null);
-    setPreviewType("");
-    setPreviewName("");
+    setPreviewItem(null);
   };
 
   const getFileIcon = (item: Item) => {
     if (item.type === "folder") {
       return "📁";
     }
-    if (item.type === "file") {
-      const format = item.format.toLowerCase();
-      if (format.includes("image")) return "🖼️";
-      if (format.includes("pdf")) return "📄";
-      if (format.includes("text")) return "📝";
-      if (format.includes("video")) return "🎥";
-      if (format.includes("audio")) return "🎵";
-      if (format.includes("zip") || format.includes("rar")) return "📦";
-      if (format.includes("word") || format.includes("doc")) return "📃";
-      if (format.includes("excel") || format.includes("sheet")) return "📊";
-      if (format.includes("powerpoint") || format.includes("presentation"))
-        return "📈";
-      return "📄";
-    }
-    return "📄";
+    return getFileTypeInfo(item.format).icon;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -258,13 +242,7 @@ const FileList: React.FC<FileListProps> = ({
   };
 
   const canPreview = (item: Item) => {
-    if (item.type !== "file") return false;
-    const format = item.format.toLowerCase();
-    return (
-      format.includes("image") ||
-      format === "application/pdf" ||
-      format.includes("text")
-    );
+    return item.type === "file" && canPreviewFile(item.format);
   };
 
   // Get available folders for move operation (exclude current folder and item itself)
@@ -308,12 +286,18 @@ const FileList: React.FC<FileListProps> = ({
                   height: "100%",
                   display: "flex",
                   flexDirection: "column",
-                  cursor: canPreview(item) ? "pointer" : "default",
+                  cursor: "pointer",
                   "&:hover": {
                     boxShadow: 3,
                   },
                 }}
-                onClick={() => canPreview(item) && handlePreview(item)}
+                onClick={() => {
+                  if (item.type === "folder") {
+                    onItemClick(item);
+                  } else if (canPreview(item)) {
+                    handlePreview(item);
+                  }
+                }}
               >
                 <CardContent sx={{ flexGrow: 1 }}>
                   <Box
@@ -477,6 +461,16 @@ const FileList: React.FC<FileListProps> = ({
           <ListItemText>Move</ListItemText>
         </MenuItem>
 
+        <MenuItem onClick={() => handleCopy(selectedItem)}>
+          <ListItemIcon><ContentCopy /></ListItemIcon>
+          <ListItemText>Copy</ListItemText>
+        </MenuItem>
+
+        <MenuItem onClick={() => handleCut(selectedItem)}>
+          <ListItemIcon><ContentCut /></ListItemIcon>
+          <ListItemText>Cut</ListItemText>
+        </MenuItem>
+
         <MenuItem
           onClick={() => setDeleteDialogOpen(true)}
           sx={{ color: "error.main" }}
@@ -488,81 +482,13 @@ const FileList: React.FC<FileListProps> = ({
         </MenuItem>
       </Menu>
 
-      {/* Preview Dialog */}
-      <Dialog
+      {/* Enhanced Preview Dialog */}
+      <PreviewDialog
         open={previewOpen}
         onClose={handleClosePreview}
-        maxWidth="lg"
-        fullWidth
-        PaperProps={{
-          sx: {
-            maxHeight: "90vh",
-            height: "fit-content",
-          },
-        }}
-      >
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            p: 2,
-          }}
-        >
-          <Typography
-            variant="h6"
-            sx={{ flexGrow: 1, overflow: "hidden", textOverflow: "ellipsis" }}
-          >
-            {previewName}
-          </Typography>
-          <IconButton onClick={handleClosePreview}>
-            <Close />
-          </IconButton>
-        </Box>
-        <DialogContent sx={{ p: 0 }}>
-          {previewType === "image" && previewUrl && (
-            <Box sx={{ textAlign: "center", p: 2 }}>
-              <img
-                src={previewUrl}
-                alt="Preview"
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "70vh",
-                  objectFit: "contain",
-                  borderRadius: 4,
-                }}
-                onError={(e) => {
-                  console.error("Image load error for:", previewUrl);
-                  e.currentTarget.src =
-                    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0cHgiIGZpbGw9IiM5OTkiPkltYWdlIG5vdCBhdmFpbGFibGU8L3RleHQ+PC9zdmc+";
-                }}
-              />
-            </Box>
-          )}
-
-          {previewType === "pdf" && previewUrl && (
-            <iframe
-              src={previewUrl}
-              title="PDF Preview"
-              style={{ width: "100%", height: "70vh", border: "none" }}
-              onError={() => {
-                console.error("PDF load error for:", previewUrl);
-              }}
-            />
-          )}
-
-          {previewType === "text" && previewUrl && (
-            <iframe
-              src={previewUrl}
-              title="Text Preview"
-              style={{ width: "100%", height: "70vh", border: "none" }}
-              onError={() => {
-                console.error("Text file load error for:", previewUrl);
-              }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+        item={previewItem}
+        onDownload={handleSecureDownload}
+      />
 
       {/* Rename Dialog */}
       <Dialog
@@ -684,4 +610,5 @@ const FileList: React.FC<FileListProps> = ({
     </>
   );
 };
+
 export default FileList;

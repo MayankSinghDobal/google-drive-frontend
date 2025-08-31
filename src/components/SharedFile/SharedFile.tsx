@@ -25,7 +25,8 @@ interface SharedFileData {
   role: "view" | "edit";
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
 
 const SharedFile: React.FC = () => {
   const { shareToken } = useParams<{ shareToken: string }>();
@@ -42,7 +43,15 @@ const SharedFile: React.FC = () => {
       }
 
       try {
-        const response = await axios.get(`${API_BASE_URL}/files/share/${shareToken}`);
+        const response = await axios.get(
+          `${API_BASE_URL}/files/share/${shareToken}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            withCredentials: false, // Don't send credentials for shared files
+          }
+        );
         setFileData(response.data as SharedFileData);
       } catch (err: any) {
         setError(err.response?.data?.error || "Failed to load shared file");
@@ -56,10 +65,10 @@ const SharedFile: React.FC = () => {
 
   const handleDownload = () => {
     if (fileData?.file.signedUrl) {
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = fileData.file.signedUrl;
       link.download = fileData.file.name;
-      link.target = '_blank';
+      link.target = "_blank";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -68,12 +77,12 @@ const SharedFile: React.FC = () => {
 
   const getFileIcon = (format: string) => {
     const f = format.toLowerCase();
-    if (f.includes("image")) return "🖼️";
-    if (f.includes("pdf")) return "📄";
-    if (f.includes("text")) return "📝";
-    if (f.includes("video")) return "🎥";
-    if (f.includes("audio")) return "🎵";
-    return "📄";
+    if (f.includes("image")) return "ðŸ–¼ï¸";
+    if (f.includes("pdf")) return "ðŸ“„";
+    if (f.includes("text")) return "ðŸ“";
+    if (f.includes("video")) return "ðŸŽ¥";
+    if (f.includes("audio")) return "ðŸŽµ";
+    return "ðŸ“„";
   };
 
   const canPreview = (format: string) => {
@@ -84,13 +93,21 @@ const SharedFile: React.FC = () => {
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes < 1024 * 1024 * 1024)
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
 
   if (loading) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
         <CircularProgress />
       </Box>
     );
@@ -122,10 +139,21 @@ const SharedFile: React.FC = () => {
       <Box sx={{ maxWidth: 1200, mx: "auto" }}>
         <Card sx={{ mb: 2 }}>
           <CardContent>
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                <Typography variant="h5" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <span style={{ fontSize: "2rem" }}>{getFileIcon(fileData.file.format)}</span>
+                <Typography
+                  variant="h5"
+                  sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                >
+                  <span style={{ fontSize: "2rem" }}>
+                    {getFileIcon(fileData.file.format)}
+                  </span>
                   {fileData.file.name}
                 </Typography>
               </Box>
@@ -139,12 +167,17 @@ const SharedFile: React.FC = () => {
                 </Button>
               </Box>
             </Box>
-            
+
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Size: {formatFileSize(fileData.file.size)} • Type: {fileData.file.format} • Permission: {fileData.role}
+              Size: {formatFileSize(fileData.file.size)} â€¢ Type:{" "}
+              {fileData.file.format} â€¢ Permission: {fileData.role}
             </Typography>
-            
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 1 }}
+            >
               Created: {new Date(fileData.file.created_at).toLocaleString()}
             </Typography>
           </CardContent>
@@ -165,12 +198,13 @@ const SharedFile: React.FC = () => {
                       borderRadius: 4,
                     }}
                     onError={(e) => {
-                      e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0cHgiIGZpbGw9IiM5OTkiPkltYWdlIG5vdCBhdmFpbGFibGU8L3RleHQ+PC9zdmc+';
+                      e.currentTarget.src =
+                        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0cHgiIGZpbGw9IiM5OTkiPkltYWdlIG5vdCBhdmFpbGFibGU8L3RleHQ+PC9zdmc+";
                     }}
                   />
                 </Box>
               )}
-              
+
               {fileData.file.format === "application/pdf" && (
                 <iframe
                   src={fileData.file.signedUrl}
@@ -178,7 +212,7 @@ const SharedFile: React.FC = () => {
                   style={{ width: "100%", height: "80vh", border: "none" }}
                 />
               )}
-              
+
               {fileData.file.format.toLowerCase().includes("text") && (
                 <iframe
                   src={fileData.file.signedUrl}
