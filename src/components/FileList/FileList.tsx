@@ -75,9 +75,11 @@ const FileList: React.FC<FileListProps> = ({
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  
+
   // Clipboard state
-  const [clipboardItems, setClipboardItems] = useState<{id: number, type: 'file'|'folder', operation: 'copy'|'cut'}[]>([]);
+  const [clipboardItems, setClipboardItems] = useState<
+    { id: number; type: "file" | "folder"; operation: "copy" | "cut" }[]
+  >([]);
 
   // Form states
   const [newName, setNewName] = useState("");
@@ -186,7 +188,6 @@ const FileList: React.FC<FileListProps> = ({
     try {
       setLoading(true);
 
-      // Convert targetFolder from string to number or null
       const folderId = !targetFolder ? null : Number(targetFolder);
 
       if (selectedItem.type === "file") {
@@ -206,17 +207,16 @@ const FileList: React.FC<FileListProps> = ({
     }
   };
 
-  // Copy/Cut handlers (placeholders for now)
   const handleCopy = (item: Item | null) => {
     if (!item) return;
-    setClipboardItems([{ id: item.id, type: item.type, operation: 'copy' }]);
+    setClipboardItems([{ id: item.id, type: item.type, operation: "copy" }]);
     handleMenuClose();
     console.log("Copied:", item.name);
   };
 
   const handleCut = (item: Item | null) => {
     if (!item) return;
-    setClipboardItems([{ id: item.id, type: item.type, operation: 'cut' }]);
+    setClipboardItems([{ id: item.id, type: item.type, operation: "cut" }]);
     handleMenuClose();
     console.log("Cut:", item.name);
   };
@@ -245,7 +245,6 @@ const FileList: React.FC<FileListProps> = ({
     return item.type === "file" && canPreviewFile(item.format);
   };
 
-  // Get available folders for move operation (exclude current folder and item itself)
   const getAvailableFolders = () => {
     const available = folders.filter((folder) => {
       if (selectedItem?.type === "folder" && folder.id === selectedItem.id)
@@ -462,12 +461,16 @@ const FileList: React.FC<FileListProps> = ({
         </MenuItem>
 
         <MenuItem onClick={() => handleCopy(selectedItem)}>
-          <ListItemIcon><ContentCopy /></ListItemIcon>
+          <ListItemIcon>
+            <ContentCopy />
+          </ListItemIcon>
           <ListItemText>Copy</ListItemText>
         </MenuItem>
 
         <MenuItem onClick={() => handleCut(selectedItem)}>
-          <ListItemIcon><ContentCut /></ListItemIcon>
+          <ListItemIcon>
+            <ContentCut />
+          </ListItemIcon>
           <ListItemText>Cut</ListItemText>
         </MenuItem>
 

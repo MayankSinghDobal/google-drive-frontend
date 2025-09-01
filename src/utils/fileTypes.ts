@@ -31,14 +31,7 @@ export const FILE_TYPES: Record<string, FileTypeInfo> = {
     icon: '📘', color: '#2196F3', canPreview: false, previewType: 'none', category: 'Document' 
   },
   'application/msword': { icon: '📘', color: '#2196F3', canPreview: false, previewType: 'none', category: 'Document' },
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { 
-    icon: '📗', color: '#4CAF50', canPreview: false, previewType: 'none', category: 'Spreadsheet' 
-  },
-  'application/vnd.ms-excel': { icon: '📗', color: '#4CAF50', canPreview: false, previewType: 'none', category: 'Spreadsheet' },
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { 
-    icon: '📙', color: '#FF5722', canPreview: false, previewType: 'none', category: 'Presentation' 
-  },
-  'application/vnd.ms-powerpoint': { icon: '📙', color: '#FF5722', canPreview: false, previewType: 'none', category: 'Presentation' },
+  
 
   // Videos
   'video/mp4': { icon: '🎥', color: '#E91E63', canPreview: true, previewType: 'video', category: 'Video' },
@@ -73,6 +66,27 @@ export const FILE_TYPES: Record<string, FileTypeInfo> = {
 
   // Others
   'application/octet-stream': { icon: '📄', color: '#757575', canPreview: false, previewType: 'none', category: 'Binary' },
+  // Add these to your existing FILE_TYPES object:
+
+// Excel files
+'application/vnd.ms-excel': { icon: '📊', color: '#4CAF50', canPreview: false, previewType: 'none', category: 'Spreadsheet' },
+'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { icon: '📊', color: '#4CAF50', canPreview: false, previewType: 'none', category: 'Spreadsheet' },
+
+// PowerPoint files
+'application/vnd.ms-powerpoint': { icon: '📽️', color: '#FF5722', canPreview: false, previewType: 'none', category: 'Presentation' },
+'application/vnd.openxmlformats-officedocument.presentationml.presentation': { icon: '📽️', color: '#FF5722', canPreview: false, previewType: 'none', category: 'Presentation' },
+
+// More video formats
+'video/quicktime': { icon: '🎥', color: '#E91E63', canPreview: true, previewType: 'video', category: 'Video' },
+'video/x-msvideo': { icon: '🎥', color: '#E91E63', canPreview: true, previewType: 'video', category: 'Video' },
+
+// Archives
+'application/x-rar': { icon: '📦', color: '#607D8B', canPreview: false, previewType: 'none', category: 'Archive' },
+'application/x-zip-compressed': { icon: '📦', color: '#607D8B', canPreview: false, previewType: 'none', category: 'Archive' },
+
+// More code files
+'text/markdown': { icon: '📝', color: '#2196F3', canPreview: true, previewType: 'text', category: 'Text' },
+'application/x-python-code': { icon: '🐍', color: '#4CAF50', canPreview: true, previewType: 'text', category: 'Code' },
 };
 
 export const getFileTypeInfo = (mimeType: string): FileTypeInfo => {

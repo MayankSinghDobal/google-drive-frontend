@@ -8,9 +8,8 @@ import {
   Alert,
   Card,
   CardContent,
-  IconButton,
 } from "@mui/material";
-import { Download, Close } from "@mui/icons-material";
+import { Download } from "@mui/icons-material";
 import axios from "axios";
 
 interface SharedFileData {
@@ -49,7 +48,7 @@ const SharedFile: React.FC = () => {
             headers: {
               "Content-Type": "application/json",
             },
-            withCredentials: false, // Don't send credentials for shared files
+            withCredentials: false,
           }
         );
         setFileData(response.data as SharedFileData);
@@ -77,12 +76,12 @@ const SharedFile: React.FC = () => {
 
   const getFileIcon = (format: string) => {
     const f = format.toLowerCase();
-    if (f.includes("image")) return "ðŸ–¼ï¸";
-    if (f.includes("pdf")) return "ðŸ“„";
-    if (f.includes("text")) return "ðŸ“";
-    if (f.includes("video")) return "ðŸŽ¥";
-    if (f.includes("audio")) return "ðŸŽµ";
-    return "ðŸ“„";
+    if (f.includes("image")) return "🖼️";
+    if (f.includes("pdf")) return "📄";
+    if (f.includes("text")) return "📝";
+    if (f.includes("video")) return "🎥";
+    if (f.includes("audio")) return "🎵";
+    return "📄";
   };
 
   const canPreview = (format: string) => {
@@ -169,8 +168,8 @@ const SharedFile: React.FC = () => {
             </Box>
 
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Size: {formatFileSize(fileData.file.size)} â€¢ Type:{" "}
-              {fileData.file.format} â€¢ Permission: {fileData.role}
+              Size: {formatFileSize(fileData.file.size)} • Type:{" "}
+              {fileData.file.format} • Permission: {fileData.role}
             </Typography>
 
             <Typography

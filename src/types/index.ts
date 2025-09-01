@@ -1,4 +1,3 @@
-// 1. Fix types/index.ts - Export all interfaces properly
 export interface File {
   id: number;
   name: string;
