@@ -138,7 +138,7 @@ const FileList: React.FC<FileListProps> = ({
             delete updated[item.id];
             return updated;
           });
-        }, 2000);
+        }, 20000);
       } catch (error) {
         console.error("Download failed:", error);
         setError("Download failed. Please try again.");
@@ -279,7 +279,7 @@ const FileList: React.FC<FileListProps> = ({
 
   const getFileIcon = (item: Item) => {
     if (item.type === "folder") {
-      return "ðŸ“";
+      return "📁";
     }
     return getFileTypeInfo(item.format).icon;
   };
@@ -422,7 +422,7 @@ const FileList: React.FC<FileListProps> = ({
                     sx={{ mb: 1 }}
                   >
                     {item.type === "file"
-                      ? `${formatFileSize(item.size)} â€¢ ${getFileTypeInfo(item.format).category}`
+                      ? `${formatFileSize(item.size)} • ${getFileTypeInfo(item.format).category}`
                       : "Folder"}
                   </Typography>
 

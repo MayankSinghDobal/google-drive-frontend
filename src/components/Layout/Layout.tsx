@@ -127,9 +127,9 @@ const Layout: React.FC = () => {
       const file = files[0];
 
       const config = {
-        onUploadProgress: (progressEvent: AxiosProgressEvent) => {
+        onUploadProgress: (progressEvent: AxiosProgressEvent | ProgressEvent) => {
   const percent = Math.round(
-    (progressEvent.loaded * 100) / (progressEvent.total ?? 1)
+    (((progressEvent as any).loaded ?? (progressEvent as any).bytes ?? 0) * 100) / ((progressEvent as any).total ?? 1)
   );
   setUploadProgress(percent);
 },

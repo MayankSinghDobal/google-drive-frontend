@@ -1,4 +1,5 @@
-import axios, { AxiosProgressEvent } from "axios";
+import axios from "axios";
+import type { AxiosProgressEvent } from "axios";
 import type { File as CustomFile, Folder, User } from "../types";
 
 interface AuthMeResponse {
@@ -118,7 +119,7 @@ export const uploadFile = async (
   file: globalThis.File,
   folderId: number | null = null,
   config: { 
-    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
+    onUploadProgress?: (progressEvent: AxiosProgressEvent | ProgressEvent) => void;
     onSuccess?: (response: UploadResponse) => void;
     onError?: (error: Error) => void;
   } = {}
@@ -139,12 +140,12 @@ export const uploadFile = async (
       },
       timeout: 300000, // 5 minutes for large files
       onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-        const percentCompleted = Math.round(
-          (progressEvent.loaded * 100) / (progressEvent.total ?? 1)
-        );
+        const loaded = (progressEvent as any).loaded ?? (progressEvent as any).bytes ?? 0;
+        const total = (progressEvent as any).total ?? 1;
+        const percentCompleted = Math.round((loaded * 100) / total);
         console.log(`Upload progress: ${percentCompleted}%`);
         if (config.onUploadProgress) {
-          config.onUploadProgress(progressEvent);
+          config.onUploadProgress(progressEvent as any);
         }
       },
     };
@@ -241,48 +242,85 @@ export const downloadFile = async (
 };
 
 // Alternative download method using fetch for better control
+
 export const downloadFileWithFetch = async (
   fileId: number,
   onProgress?: (progress: number) => void
 ): Promise<void> => {
   try {
-    onProgress?.(10);
+    onProgress?.(5);
     const downloadData = await getSecureDownloadUrl(fileId);
-    onProgress?.(20);
-    
-    // Fetch the file
+    onProgress?.(10);
+
     const response = await fetch(downloadData.signedUrl, {
       method: 'GET',
-      headers: {
-        'Accept': '*/*',
-      },
+      headers: { Accept: '*/*' },
     });
-    
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(`Network response was not ok: ${response.status}`);
     }
-    
-    onProgress?.(50);
-    
-    // Get the blob
-    const blob = await response.blob();
-    onProgress?.(80);
-    
-    // Create blob URL
+
+    // Try to get content length for progress calculation
+    const contentLengthHeader = response.headers.get('Content-Length') || response.headers.get('content-length');
+    const total = contentLengthHeader ? parseInt(contentLengthHeader, 10) : undefined;
+
+    if (!response.body) {
+      // Fallback: use blob directly
+      const blobFallback = await response.blob();
+      const url = window.URL.createObjectURL(blobFallback);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = downloadData.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      onProgress?.(100);
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        received += value.length;
+        if (total) {
+          const pct = Math.round((received / total) * 100);
+          onProgress?.(pct);
+        } else {
+          // Estimate progress with arbitrary scaling if total unknown
+          onProgress?.(Math.min(95, Math.round((received / (1024 * 1024)) * 10)));
+        }
+      }
+    }
+
+    // Combine chunks into a single Uint8Array
+    const combined = new Uint8Array(received);
+    let position = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, position);
+      position += chunk.length;
+    }
+
+    // Create blob from Uint8Array
+    const blob = new Blob([combined]);
     const url = window.URL.createObjectURL(blob);
-    
-    // Create download link
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = downloadData.fileName;
     document.body.appendChild(link);
     link.click();
-    
-    // Clean up
+
+    // Cleanup
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
     onProgress?.(100);
-    
     console.log(`Download completed: ${downloadData.fileName}`);
   } catch (error) {
     console.error('Fetch download failed:', error);
