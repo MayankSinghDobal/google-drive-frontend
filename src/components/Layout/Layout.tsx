@@ -1,161 +1,310 @@
 import React, { useState, useEffect, useCallback } from "react";
+
 import {
+
   Box,
+
   CssBaseline,
+
   CircularProgress,
+
   Typography,
+
   Breadcrumbs,
+
   Link,
+
   Snackbar,
+
   Alert,
+
   Button,
+
   TextField,
+
   Dialog,
+
   DialogTitle,
+
   DialogContent,
+
   DialogActions,
+
 } from "@mui/material";
+
 import { ThemeProvider, createTheme } from "@mui/material/styles";
+
 import Sidebar from "../Sidebar/Sidebar";
+
 import TopBar from "../TopBar/TopBar";
+
 import FileList from "../FileList/FileList";
+
 import type { Item, Folder, User } from "../../types";
+
 import {
+
   getFilesAndFolders,
+
   getUser,
+
   searchItems,
+
   uploadFile,
+
   shareFile,
+
   logout,
+
   createFolder,
+
 } from "../../services/api";
 
+import { AxiosProgressEvent } from "axios"; // ✅ Import Axios type
+
+
+
 const theme = createTheme({
+
   palette: {
+
     primary: { main: "#4285f4" },
+
     secondary: { main: "#fbbc05" },
+
     background: { default: "#f5f5f5" },
+
   },
+
   typography: {
+
     fontFamily: "Roboto, sans-serif",
+
   },
+
 });
 
+
+
 const Layout: React.FC = () => {
+
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
+
   const [user, setUser] = useState<User | null>(null);
+
   const [items, setItems] = useState<Item[]>([]);
+
   const [folders, setFolders] = useState<Folder[]>([]);
+
   const [loading, setLoading] = useState(true);
+
   const [error, setError] = useState<string | null>(null);
+
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+
   const [snackbar, setSnackbar] = useState<{
+
     open: boolean;
+
     message: string;
+
     severity: "success" | "error" | "info";
+
   }>({
+
     open: false,
+
     message: "",
+
     severity: "success",
+
   });
+
   const [isDragging, setIsDragging] = useState(false);
+
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+
   const [newFolderName, setNewFolderName] = useState("");
 
+
+
   const loadData = useCallback(async () => {
+
     try {
+
       setLoading(true);
+
       setError(null);
+
+
 
       console.log("Loading data for folder:", selectedFolder);
 
-      // Load user and items
+
+
       const [userData, fetchedItems] = await Promise.all([
+
         getUser(),
+
         getFilesAndFolders(selectedFolder),
+
       ]);
 
-      console.log("User data:", userData);
-      console.log("Fetched items:", fetchedItems);
+
 
       setUser(userData);
+
       setItems(fetchedItems);
+
       setFolders(
+
         fetchedItems.filter((item: Item) => item.type === "folder") as Folder[]
+
       );
+
     } catch (err: any) {
+
       console.error("Failed to load data:", err);
+
       setError(
+
         err.response?.data?.error || "Failed to load data. Please try again."
+
       );
+
     } finally {
+
       setLoading(false);
+
     }
+
   }, [selectedFolder]);
 
+
+
   useEffect(() => {
+
     loadData();
+
   }, [loadData]);
 
+
+
   const handleSearch = async (query: string) => {
+
     setSearchQuery(query);
+
     if (query.trim()) {
+
       try {
+
         const searchResults = await searchItems(query);
+
         setItems(searchResults);
+
       } catch (err: any) {
+
         setSnackbar({
+
           open: true,
+
           message:
+
             err.response?.data?.error || "Search failed. Please try again.",
+
           severity: "error",
+
         });
+
       }
+
     } else {
-      // Reload original data
+
       loadData();
+
     }
+
   };
 
+
+
   const handleUpload = async (files: FileList | null) => {
+
     if (!files || files.length === 0) return;
 
+
+
     try {
+
       setUploadProgress(0);
+
       const file = files[0];
 
+
+
       const config = {
-        onUploadProgress: (progressEvent: ProgressEvent) => {
-          const percent = Math.round(
-            (progressEvent.loaded * 100) / (progressEvent.total || 1)
-          );
-          setUploadProgress(percent);
+
+        onUploadProgress: (progressEvent: AxiosProgressEvent) => { // ✅ Fixed type
+
+          if (progressEvent.total) {
+
+            const percent = Math.round(
+
+              (progressEvent.loaded * 100) / progressEvent.total
+
+            );
+
+            setUploadProgress(percent);
+
+          }
+
         },
+
       };
+
+
 
       await uploadFile(file, selectedFolder, config);
 
+
+
       setSnackbar({
+
         open: true,
+
         message: "File uploaded successfully!",
+
         severity: "success",
+
       });
 
-      // Reload data
+
+
       await loadData();
-    } catch (err: any) {
-      setSnackbar({
-        open: true,
-        message:
-          err.response?.data?.error || "Upload failed. Please try again.",
-        severity: "error",
-      });
-    } finally {
-      setUploadProgress(0);
-    }
-  };
 
+    } catch (err: any) {
+
+      setSnackbar({
+
+        open: true,
+
+        message:
+
+          err.response?.data?.error || "Upload failed. Please try again.",
+
+        severity: "error",
+
+      });
+
+    } finally {
+
+      setUploadProgress(0);
+
+    }
+
+  };
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
       setSnackbar({
