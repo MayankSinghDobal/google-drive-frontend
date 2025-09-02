@@ -9,7 +9,6 @@ import {
   Button,
   Dialog,
   DialogContent,
-  Grid,
   IconButton,
   Box,
   Menu,
@@ -329,9 +328,9 @@ const FileList: React.FC<FileListProps> = ({
         </Alert>
       )}
 
-      <Grid container spacing={2} sx={{ p: 2 }}>
+      <Box sx={{ display: "grid", gap: 2, p: 2, gridTemplateColumns: { xs: "repeat(1, 1fr)", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)", lg: "repeat(4, 1fr)" } }}>
         {items.map((item) => (
-          <Grid key={item.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+          <Box key={item.id} sx={{ display: "block" }}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -484,9 +483,9 @@ const FileList: React.FC<FileListProps> = ({
                 </CardActions>
               </Card>
             </motion.div>
-          </Grid>
+          </Box>
         ))}
-      </Grid>
+      </Box>
 
       {/* Enhanced Context Menu */}
       <Menu
