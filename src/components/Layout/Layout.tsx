@@ -194,7 +194,12 @@ const Layout: React.FC = () => {
 
   const handleShare = async (id: number) => {
     try {
-      const response = await shareFile(id, "view");
+      // Fixed: Pass proper options object instead of just string
+      const response = await shareFile(id, { 
+        role: "view",
+        can_download: true,
+        can_preview: true 
+      });
 
       const shareLink = response.shareableLink;
 
