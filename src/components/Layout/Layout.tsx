@@ -29,6 +29,7 @@ import {
   logout,
   createFolder,
 } from "../../services/api";
+import { AxiosProgressEvent } from "axios";
 
 const theme = createTheme({
   palette: {
@@ -70,7 +71,6 @@ const Layout: React.FC = () => {
 
       console.log("Loading data for folder:", selectedFolder);
 
-      // Load user and items
       const [userData, fetchedItems] = await Promise.all([
         getUser(),
         getFilesAndFolders(selectedFolder),
@@ -113,7 +113,6 @@ const Layout: React.FC = () => {
         });
       }
     } else {
-      // Reload original data
       loadData();
     }
   };
@@ -126,9 +125,9 @@ const Layout: React.FC = () => {
       const file = files[0];
 
       const config = {
-        onUploadProgress: (progressEvent: ProgressEvent) => {
+        onUploadProgress: (progressEvent: AxiosProgressEvent) => {
           const percent = Math.round(
-            (progressEvent.loaded * 100) / (progressEvent.total || 1)
+            (progressEvent.loaded * 100) / (progressEvent.total ?? 1)
           );
           setUploadProgress(percent);
         },
@@ -142,7 +141,6 @@ const Layout: React.FC = () => {
         severity: "success",
       });
 
-      // Reload data
       await loadData();
     } catch (err: any) {
       setSnackbar({
@@ -175,7 +173,6 @@ const Layout: React.FC = () => {
         severity: "success",
       });
 
-      // Reload data
       await loadData();
 
       setFolderDialogOpen(false);
@@ -198,7 +195,6 @@ const Layout: React.FC = () => {
 
       const shareLink = response.shareableLink;
 
-      // Try to copy to clipboard
       try {
         await navigator.clipboard.writeText(shareLink);
         setSnackbar({
@@ -207,12 +203,10 @@ const Layout: React.FC = () => {
           severity: "success",
         });
       } catch (clipboardErr) {
-        // Fallback: show link in a dialog or alert
         const userConfirmed = window.confirm(
           `Share link created! Click OK to copy:\n\n${shareLink}`
         );
         if (userConfirmed) {
-          // Try manual selection
           const textArea = document.createElement("textarea");
           textArea.value = shareLink;
           document.body.appendChild(textArea);
@@ -251,10 +245,9 @@ const Layout: React.FC = () => {
       setItems([]);
       setFolders([]);
       localStorage.removeItem("token");
-      window.location.reload(); // Force reload to go back to login
+      window.location.reload();
     } catch (err: any) {
       console.error("Logout error:", err);
-      // Force logout even if server request fails
       localStorage.removeItem("token");
       window.location.reload();
     }
@@ -282,18 +275,17 @@ const Layout: React.FC = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
-  // Enhanced folder navigation with proper hierarchy
   const handleFolderClick = (item: Item) => {
     if (item.type === "folder") {
       setSelectedFolder(item.id);
-      setSearchQuery(""); // Clear search when navigating
+      setSearchQuery("");
     }
   };
-  // Add this function after the existing handleFolderClick:
+
   const handleItemClick = (item: Item) => {
     if (item.type === "folder") {
       setSelectedFolder(item.id);
-      setSearchQuery(""); // Clear search when navigating
+      setSearchQuery("");
     }
   };
 
@@ -303,7 +295,6 @@ const Layout: React.FC = () => {
     ];
 
     if (selectedFolder) {
-      // Build path from current folder back to root
       let currentFolder = folders.find((f: Folder) => f.id === selectedFolder);
       const path: { id: number; name: string }[] = [];
 
@@ -320,21 +311,16 @@ const Layout: React.FC = () => {
     return crumbs;
   };
 
-  // Filter items based on current folder and search - FIXED LOGIC
   const filteredItems = items.filter((item: Item) => {
-    // Apply search filter first
     if (searchQuery) {
       return item.name.toLowerCase().includes(searchQuery.toLowerCase());
     }
 
-    // Apply folder filter when not searching
     if (selectedFolder === null) {
-      // Show root level items
       return item.type === "file"
         ? item.folder_id === null || item.folder_id === undefined
         : item.parent_id === null || item.parent_id === undefined;
     } else {
-      // Show items in selected folder
       return item.type === "file"
         ? item.folder_id === selectedFolder
         : item.parent_id === selectedFolder;
@@ -382,7 +368,7 @@ const Layout: React.FC = () => {
           selectedFolder={selectedFolder}
           onFolderSelect={(folderId) => {
             setSelectedFolder(folderId);
-            setSearchQuery(""); // Clear search when navigating via sidebar
+            setSearchQuery("");
           }}
         />
         <Box sx={{ flexGrow: 1 }}>
@@ -412,7 +398,7 @@ const Layout: React.FC = () => {
                   }
                   onClick={() => {
                     setSelectedFolder(crumb.id);
-                    setSearchQuery(""); // Clear search when using breadcrumbs
+                    setSearchQuery("");
                   }}
                   sx={{ cursor: "pointer" }}
                 >
@@ -485,7 +471,7 @@ const Layout: React.FC = () => {
             onItemClick={(item) => {
               if (item.type === "folder") {
                 setSelectedFolder(item.id);
-                setSearchQuery(""); // Clear search when navigating
+                setSearchQuery("");
               }
             }}
           />
