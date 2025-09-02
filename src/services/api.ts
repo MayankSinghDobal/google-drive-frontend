@@ -31,6 +31,14 @@ interface ShareResponse {
   shareableLink: string;
 }
 
+interface DownloadResponse {
+  signedUrl: string;
+  fileName: string;
+  fileSize: number;
+  fileFormat: string;
+  expiresIn: number;
+}
+
 const baseURL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
 
 const api = axios.create({
@@ -39,7 +47,7 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
   withCredentials: true,
-  timeout: 30000, // 30 second timeout
+  timeout: 60000, // Increased timeout for large files
 });
 
 api.interceptors.request.use((config) => {
@@ -105,23 +113,59 @@ export const searchItems = async (
   return response.data.results;
 };
 
+// Enhanced upload function with better progress tracking
 export const uploadFile = async (
   file: globalThis.File,
   folderId: number | null = null,
-  config: { onUploadProgress?: (progressEvent: ProgressEvent) => void } = {}
+  config: { 
+    onUploadProgress?: (progressEvent: ProgressEvent) => void;
+    onSuccess?: (response: UploadResponse) => void;
+    onError?: (error: Error) => void;
+  } = {}
 ): Promise<UploadResponse> => {
-  const formData = new FormData();
-  formData.append("file", file);
-  
-  if (folderId !== null) {
-    formData.append("folder_id", folderId.toString());
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    if (folderId !== null) {
+      formData.append("folder_id", folderId.toString());
+    }
+    
+    console.log(`Uploading file: ${file.name}, Size: ${file.size}, Type: ${file.type}`);
+    
+    const postConfig = {
+      headers: { 
+        "Content-Type": "multipart/form-data",
+      },
+      timeout: 300000, // 5 minutes for large files
+      onUploadProgress: (progressEvent: ProgressEvent) => {
+        const percentCompleted = Math.round(
+          (progressEvent.loaded * 100) / (progressEvent.total || 1)
+        );
+        console.log(`Upload progress: ${percentCompleted}%`);
+        if (config.onUploadProgress) {
+          config.onUploadProgress(progressEvent);
+        }
+      },
+    };
+    
+    const response = await api.post("/files/upload", formData, postConfig);
+    
+    const uploadResponse = response.data as UploadResponse;
+    
+    console.log('Upload successful:', uploadResponse);
+    if (config.onSuccess) {
+      config.onSuccess(uploadResponse);
+    }
+    
+    return uploadResponse;
+  } catch (error) {
+    console.error('Upload failed:', error);
+    if (config.onError && error instanceof Error) {
+      config.onError(error);
+    }
+    throw error;
   }
-  
-  const response = await api.post<UploadResponse>("/files/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-    ...config,
-  });
-  return response.data;
 };
 
 export const shareFile = async (
@@ -145,19 +189,119 @@ export const createFolder = async (
   return response.data;
 };
 
-// NEW: Delete file function
+// Enhanced secure download function
+export const getSecureDownloadUrl = async (
+  fileId: number
+): Promise<DownloadResponse> => {
+  try {
+    console.log(`Getting download URL for file: ${fileId}`);
+    const response = await api.get<DownloadResponse>(`/files/${fileId}/download`);
+    console.log('Download URL generated:', response.data.fileName);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to get download URL:', error);
+    throw error;
+  }
+};
+
+// Enhanced download function with automatic file download
+export const downloadFile = async (
+  fileId: number,
+  onProgress?: (progress: number) => void
+): Promise<void> => {
+  try {
+    onProgress?.(10);
+    const downloadData = await getSecureDownloadUrl(fileId);
+    onProgress?.(30);
+    
+    // Create a hidden anchor element to trigger download
+    const link = document.createElement("a");
+    link.href = downloadData.signedUrl;
+    link.download = downloadData.fileName;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    
+    // Add to DOM temporarily
+    document.body.appendChild(link);
+    onProgress?.(60);
+    
+    // Trigger download
+    link.click();
+    onProgress?.(90);
+    
+    // Clean up
+    document.body.removeChild(link);
+    onProgress?.(100);
+    
+    console.log(`Download initiated for: ${downloadData.fileName}`);
+  } catch (error) {
+    console.error('Download failed:', error);
+    throw error;
+  }
+};
+
+// Alternative download method using fetch for better control
+export const downloadFileWithFetch = async (
+  fileId: number,
+  onProgress?: (progress: number) => void
+): Promise<void> => {
+  try {
+    onProgress?.(10);
+    const downloadData = await getSecureDownloadUrl(fileId);
+    onProgress?.(20);
+    
+    // Fetch the file
+    const response = await fetch(downloadData.signedUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': '*/*',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    onProgress?.(50);
+    
+    // Get the blob
+    const blob = await response.blob();
+    onProgress?.(80);
+    
+    // Create blob URL
+    const url = window.URL.createObjectURL(blob);
+    
+    // Create download link
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = downloadData.fileName;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    onProgress?.(100);
+    
+    console.log(`Download completed: ${downloadData.fileName}`);
+  } catch (error) {
+    console.error('Fetch download failed:', error);
+    throw error;
+  }
+};
+
+// Delete functions
 export const deleteFile = async (fileId: number): Promise<{ message: string }> => {
   const response = await api.delete<{ message: string }>(`/files/${fileId}`);
   return response.data;
 };
 
-// NEW: Delete folder function
 export const deleteFolder = async (folderId: number): Promise<{ message: string }> => {
   const response = await api.delete<{ message: string }>(`/folders/${folderId}`);
   return response.data;
 };
 
-// NEW: Move file to folder
+// Move functions
 export const moveFile = async (
   fileId: number,
   targetFolderId: number | null
@@ -168,29 +312,6 @@ export const moveFile = async (
   return response.data;
 };
 
-// NEW: Rename file
-export const renameFile = async (
-  fileId: number,
-  newName: string
-): Promise<{ file: CustomFile; message: string }> => {
-  const response = await api.patch<{ file: CustomFile; message: string }>(`/files/${fileId}`, {
-    name: newName,
-  });
-  return response.data;
-};
-
-// NEW: Rename folder
-export const renameFolder = async (
-  folderId: number,
-  newName: string
-): Promise<{ folder: Folder; message: string }> => {
-  const response = await api.patch<{ folder: Folder; message: string }>(`/folders/${folderId}`, {
-    name: newName,
-  });
-  return response.data;
-};
-
-// NEW: Move folder
 export const moveFolder = async (
   folderId: number,
   targetParentId: number | null
@@ -201,11 +322,24 @@ export const moveFolder = async (
   return response.data;
 };
 
-// NEW: Get signed URL for secure download
-export const getSecureDownloadUrl = async (
-  fileId: number
-): Promise<{ signedUrl: string; fileName: string }> => {
-  const response = await api.get<{ signedUrl: string; fileName: string }>(`/files/${fileId}/download`);
+// Rename functions
+export const renameFile = async (
+  fileId: number,
+  newName: string
+): Promise<{ file: CustomFile; message: string }> => {
+  const response = await api.patch<{ file: CustomFile; message: string }>(`/files/${fileId}`, {
+    name: newName,
+  });
+  return response.data;
+};
+
+export const renameFolder = async (
+  folderId: number,
+  newName: string
+): Promise<{ folder: Folder; message: string }> => {
+  const response = await api.patch<{ folder: Folder; message: string }>(`/folders/${folderId}`, {
+    name: newName,
+  });
   return response.data;
 };
 

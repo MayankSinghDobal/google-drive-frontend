@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { getFileTypeInfo, canPreviewFile } from "../../utils/fileTypes";
+import { getFileTypeInfo, canPreviewFile, getOpenWithOptions } from "../../utils/fileTypes";
 import PreviewDialog from "../Preview/PreviewDialog";
 import {
   Card,
@@ -22,6 +22,10 @@ import {
   Select,
   FormControl,
   InputLabel,
+  LinearProgress,
+  Chip,
+  Divider,
+  Alert,
 } from "@mui/material";
 import {
   Close,
@@ -34,6 +38,10 @@ import {
   ContentCut,
   ContentCopy,
   Folder,
+  OpenInNew,
+  Launch,
+  CloudDownload,
+  Info,
 } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import type { Item, Folder as FolderType } from "../../types";
@@ -44,7 +52,8 @@ import {
   renameFolder,
   moveFile,
   moveFolder,
-  getSecureDownloadUrl,
+  downloadFile,
+  downloadFileWithFetch,
 } from "../../services/api";
 
 interface FileListProps {
@@ -75,6 +84,11 @@ const FileList: React.FC<FileListProps> = ({
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [openWithDialogOpen, setOpenWithDialogOpen] = useState(false);
+  const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+
+  // Download state
+  const [downloadProgress, setDownloadProgress] = useState<{ [key: number]: number }>({});
 
   // Clipboard state
   const [clipboardItems, setClipboardItems] = useState<
@@ -87,6 +101,7 @@ const FileList: React.FC<FileListProps> = ({
 
   // Loading states
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleMenuClick = (
     event: React.MouseEvent<HTMLElement>,
@@ -106,33 +121,33 @@ const FileList: React.FC<FileListProps> = ({
     setPreviewOpen(true);
   };
 
-  const handleSecureDownload = async (item: Item) => {
+  // Enhanced download function with progress
+  const handleDownload = async (item: Item) => {
     if (item.type === "file") {
       try {
-        setLoading(true);
-        const { signedUrl, fileName } = await getSecureDownloadUrl(item.id);
-
-        const link = document.createElement("a");
-        link.href = signedUrl;
-        link.download = fileName;
-        link.target = "_blank";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setError(null);
+        setDownloadProgress(prev => ({ ...prev, [item.id]: 0 }));
+        
+        await downloadFileWithFetch(item.id, (progress) => {
+          setDownloadProgress(prev => ({ ...prev, [item.id]: progress }));
+        });
+        
+        // Clear progress after a short delay
+        setTimeout(() => {
+          setDownloadProgress(prev => {
+            const updated = { ...prev };
+            delete updated[item.id];
+            return updated;
+          });
+        }, 2000);
       } catch (error) {
         console.error("Download failed:", error);
-        // Fallback to publicUrl if secure download fails
-        if ("publicUrl" in item && item.publicUrl) {
-          const link = document.createElement("a");
-          link.href = item.publicUrl;
-          link.download = item.name;
-          link.target = "_blank";
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        }
-      } finally {
-        setLoading(false);
+        setError("Download failed. Please try again.");
+        setDownloadProgress(prev => {
+          const updated = { ...prev };
+          delete updated[item.id];
+          return updated;
+        });
       }
     }
   };
@@ -142,6 +157,7 @@ const FileList: React.FC<FileListProps> = ({
 
     try {
       setLoading(true);
+      setError(null);
 
       if (selectedItem.type === "file") {
         await deleteFile(selectedItem.id);
@@ -151,8 +167,9 @@ const FileList: React.FC<FileListProps> = ({
 
       await onRefresh();
       setDeleteDialogOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Delete failed:", error);
+      setError(error.response?.data?.error || "Delete failed. Please try again.");
     } finally {
       setLoading(false);
       handleMenuClose();
@@ -164,6 +181,7 @@ const FileList: React.FC<FileListProps> = ({
 
     try {
       setLoading(true);
+      setError(null);
 
       if (selectedItem.type === "file") {
         await renameFile(selectedItem.id, newName.trim());
@@ -174,8 +192,9 @@ const FileList: React.FC<FileListProps> = ({
       await onRefresh();
       setRenameDialogOpen(false);
       setNewName("");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Rename failed:", error);
+      setError(error.response?.data?.error || "Rename failed. Please try again.");
     } finally {
       setLoading(false);
       handleMenuClose();
@@ -187,6 +206,7 @@ const FileList: React.FC<FileListProps> = ({
 
     try {
       setLoading(true);
+      setError(null);
 
       const folderId = !targetFolder ? null : Number(targetFolder);
 
@@ -199,8 +219,9 @@ const FileList: React.FC<FileListProps> = ({
       await onRefresh();
       setMoveDialogOpen(false);
       setTargetFolder("");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Move failed:", error);
+      setError(error.response?.data?.error || "Move failed. Please try again.");
     } finally {
       setLoading(false);
       handleMenuClose();
@@ -219,6 +240,37 @@ const FileList: React.FC<FileListProps> = ({
     setClipboardItems([{ id: item.id, type: item.type, operation: "cut" }]);
     handleMenuClose();
     console.log("Cut:", item.name);
+  };
+
+  const handleOpenWith = (application: string) => {
+    if (!selectedItem || selectedItem.type !== "file") return;
+    
+    // For web-based applications, open in new tab
+    const webApps = ['Browser', 'Chrome', 'Firefox', 'Edge', 'Safari'];
+    if (webApps.includes(application) && 'publicUrl' in selectedItem && selectedItem.publicUrl) {
+      window.open(selectedItem.publicUrl, '_blank');
+      setOpenWithDialogOpen(false);
+      handleMenuClose();
+      return;
+    }
+    
+    // For other applications, show instructions or attempt to open
+    if (application === 'System Default') {
+      // Try to trigger system default handler
+      const link = document.createElement('a');
+      link.href = selectedItem.publicUrl || '';
+      link.download = selectedItem.name;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // Show instructions for desktop applications
+      alert(`To open with ${application}:\n1. Download the file\n2. Right-click and select "Open with ${application}"\n3. Or drag the file to ${application}`);
+    }
+    
+    setOpenWithDialogOpen(false);
+    handleMenuClose();
   };
 
   const handleClosePreview = () => {
@@ -271,6 +323,12 @@ const FileList: React.FC<FileListProps> = ({
 
   return (
     <>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
       <Grid container spacing={2} sx={{ p: 2 }}>
         {items.map((item) => (
           <Grid key={item.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
@@ -286,6 +344,7 @@ const FileList: React.FC<FileListProps> = ({
                   display: "flex",
                   flexDirection: "column",
                   cursor: "pointer",
+                  position: "relative",
                   "&:hover": {
                     boxShadow: 3,
                   },
@@ -298,6 +357,16 @@ const FileList: React.FC<FileListProps> = ({
                   }
                 }}
               >
+                {downloadProgress[item.id] !== undefined && (
+                  <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 1 }}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={downloadProgress[item.id]}
+                      sx={{ height: 3 }}
+                    />
+                  </Box>
+                )}
+
                 <CardContent sx={{ flexGrow: 1 }}>
                   <Box
                     sx={{
@@ -354,9 +423,21 @@ const FileList: React.FC<FileListProps> = ({
                     sx={{ mb: 1 }}
                   >
                     {item.type === "file"
-                      ? `${formatFileSize(item.size)} • ${item.format}`
+                      ? `${formatFileSize(item.size)} • ${getFileTypeInfo(item.format).category}`
                       : "Folder"}
                   </Typography>
+
+                  {item.type === "file" && (
+                    <Chip
+                      label={getFileTypeInfo(item.format).category}
+                      size="small"
+                      sx={{
+                        backgroundColor: getFileTypeInfo(item.format).color + "20",
+                        color: getFileTypeInfo(item.format).color,
+                        mb: 1,
+                      }}
+                    />
+                  )}
 
                   <Typography
                     variant="caption"
@@ -382,14 +463,16 @@ const FileList: React.FC<FileListProps> = ({
                       </Button>
                       <Button
                         size="small"
-                        startIcon={<Download />}
+                        startIcon={<CloudDownload />}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleSecureDownload(item);
+                          handleDownload(item);
                         }}
-                        disabled={loading}
+                        disabled={downloadProgress[item.id] !== undefined}
                       >
-                        Download
+                        {downloadProgress[item.id] !== undefined
+                          ? `${downloadProgress[item.id]}%`
+                          : "Download"}
                       </Button>
                     </>
                   )}
@@ -405,25 +488,44 @@ const FileList: React.FC<FileListProps> = ({
         ))}
       </Grid>
 
-      {/* Context Menu */}
+      {/* Enhanced Context Menu */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
         PaperProps={{
           elevation: 3,
-          sx: { minWidth: 180 },
+          sx: { minWidth: 200 },
         }}
       >
         {selectedItem?.type === "file" && (
-          <MenuItem
-            onClick={() => handleSecureDownload(selectedItem)}
-            disabled={loading}
-          >
+          <MenuItem onClick={() => handleDownload(selectedItem)}>
             <ListItemIcon>
               <Download />
             </ListItemIcon>
             <ListItemText>Download</ListItemText>
+          </MenuItem>
+        )}
+
+        {selectedItem?.type === "file" && canPreview(selectedItem) && (
+          <MenuItem onClick={() => handlePreview(selectedItem)}>
+            <ListItemIcon>
+              <OpenInNew />
+            </ListItemIcon>
+            <ListItemText>Preview</ListItemText>
+          </MenuItem>
+        )}
+
+        {selectedItem?.type === "file" && (
+          <MenuItem
+            onClick={() => {
+              setOpenWithDialogOpen(true);
+            }}
+          >
+            <ListItemIcon>
+              <Launch />
+            </ListItemIcon>
+            <ListItemText>Open with...</ListItemText>
           </MenuItem>
         )}
 
@@ -435,6 +537,8 @@ const FileList: React.FC<FileListProps> = ({
             <ListItemText>Share</ListItemText>
           </MenuItem>
         )}
+
+        <Divider />
 
         <MenuItem
           onClick={() => {
@@ -475,6 +579,17 @@ const FileList: React.FC<FileListProps> = ({
         </MenuItem>
 
         <MenuItem
+          onClick={() => setInfoDialogOpen(true)}
+        >
+          <ListItemIcon>
+            <Info />
+          </ListItemIcon>
+          <ListItemText>Properties</ListItemText>
+        </MenuItem>
+
+        <Divider />
+
+        <MenuItem
           onClick={() => setDeleteDialogOpen(true)}
           sx={{ color: "error.main" }}
         >
@@ -490,8 +605,106 @@ const FileList: React.FC<FileListProps> = ({
         open={previewOpen}
         onClose={handleClosePreview}
         item={previewItem}
-        onDownload={handleSecureDownload}
+        onDownload={handleDownload}
       />
+
+      {/* Open With Dialog */}
+      <Dialog
+        open={openWithDialogOpen}
+        onClose={() => setOpenWithDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Open "{selectedItem?.name}" with...
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose an application to open this file:
+          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            {selectedItem?.type === "file" &&
+              getOpenWithOptions(selectedItem.format).map((app, index) => (
+                <Button
+                  key={index}
+                  variant="outlined"
+                  onClick={() => handleOpenWith(app)}
+                  sx={{
+                    justifyContent: "flex-start",
+                    textTransform: "none",
+                  }}
+                >
+                  <Launch sx={{ mr: 1 }} />
+                  {app}
+                </Button>
+              ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenWithDialogOpen(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Properties/Info Dialog */}
+      <Dialog
+        open={infoDialogOpen}
+        onClose={() => setInfoDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Properties - {selectedItem?.name}
+        </DialogTitle>
+        <DialogContent>
+          {selectedItem && (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <Box>
+                <Typography variant="subtitle2">Type:</Typography>
+                <Typography variant="body2">
+                  {selectedItem.type === "file"
+                    ? `${getFileTypeInfo(selectedItem.format).category} (${selectedItem.format})`
+                    : "Folder"}
+                </Typography>
+              </Box>
+              
+              {selectedItem.type === "file" && (
+                <Box>
+                  <Typography variant="subtitle2">Size:</Typography>
+                  <Typography variant="body2">
+                    {formatFileSize(selectedItem.size)}
+                  </Typography>
+                </Box>
+              )}
+
+              <Box>
+                <Typography variant="subtitle2">Created:</Typography>
+                <Typography variant="body2">
+                  {new Date(selectedItem.created_at).toLocaleString()}
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="subtitle2">Location:</Typography>
+                <Typography variant="body2">
+                  {currentFolder ? "Current Folder" : "My Drive"}
+                </Typography>
+              </Box>
+
+              {selectedItem.type === "file" && 'publicUrl' in selectedItem && (
+                <Box>
+                  <Typography variant="subtitle2">Preview Available:</Typography>
+                  <Typography variant="body2">
+                    {canPreview(selectedItem) ? "Yes" : "No"}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInfoDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Rename Dialog */}
       <Dialog
