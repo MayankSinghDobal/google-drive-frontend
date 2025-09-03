@@ -195,7 +195,7 @@ const Layout: React.FC = () => {
 
   const handleShare = async (id: number) => {
     try {
-      const response = await shareFile(id, "view");
+      const response = await shareFile(id, { role: 'view' });
 
       const shareLink = response.shareableLink;
 

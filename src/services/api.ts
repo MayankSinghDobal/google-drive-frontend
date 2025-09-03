@@ -1,6 +1,6 @@
 import axios from "axios";
-import type { AxiosProgressEvent } from "axios";
 import type { File as CustomFile, Folder, User } from "../types";
+import type { AxiosProgressEvent } from "axios";
 
 interface AuthMeResponse {
   user: User;
@@ -38,6 +38,19 @@ interface DownloadResponse {
   fileSize: number;
   fileFormat: string;
   expiresIn: number;
+}
+
+interface ClipboardResponse {
+  message: string;
+  operation?: string;
+  itemType?: string;
+  itemName?: string;
+}
+
+interface PasteResponse {
+  message: string;
+  item: CustomFile | Folder;
+  operation: string;
 }
 
 const baseURL = import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
@@ -119,7 +132,7 @@ export const uploadFile = async (
   file: globalThis.File,
   folderId: number | null = null,
   config: { 
-    onUploadProgress?: (progressEvent: AxiosProgressEvent | ProgressEvent) => void;
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void;
     onSuccess?: (response: UploadResponse) => void;
     onError?: (error: Error) => void;
   } = {}
@@ -140,12 +153,12 @@ export const uploadFile = async (
       },
       timeout: 300000, // 5 minutes for large files
       onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-        const loaded = (progressEvent as any).loaded ?? (progressEvent as any).bytes ?? 0;
-        const total = (progressEvent as any).total ?? 1;
-        const percentCompleted = Math.round((loaded * 100) / total);
+        const percentCompleted = Math.round(
+          (progressEvent.loaded * 100) / (progressEvent.total || 1)
+        );
         console.log(`Upload progress: ${percentCompleted}%`);
         if (config.onUploadProgress) {
-          config.onUploadProgress(progressEvent as any);
+          config.onUploadProgress(progressEvent);
         }
       },
     };
@@ -169,13 +182,18 @@ export const uploadFile = async (
   }
 };
 
+// Enhanced share function with permissions
 export const shareFile = async (
   fileId: number,
-  role: "view" | "edit" = "view"
+  options: {
+    role: "view" | "edit";
+    can_download?: boolean;
+    can_preview?: boolean;
+    expires_at?: string | null;
+    max_access_count?: number | null;
+  } = { role: "view" }
 ): Promise<ShareResponse> => {
-  const response = await api.post<ShareResponse>(`/files/${fileId}/share`, {
-    role,
-  });
+  const response = await api.post<ShareResponse>(`/files/${fileId}/share`, options);
   return response.data;
 };
 
@@ -205,127 +223,62 @@ export const getSecureDownloadUrl = async (
   }
 };
 
-// Enhanced download function with automatic file download
+// Enhanced download function with direct file streaming
 export const downloadFile = async (
   fileId: number,
   onProgress?: (progress: number) => void
 ): Promise<void> => {
   try {
     onProgress?.(10);
-    const downloadData = await getSecureDownloadUrl(fileId);
-    onProgress?.(30);
     
-    // Create a hidden anchor element to trigger download
+    // Direct download from backend
+    const response = await api.get(`/files/${fileId}/download`, {
+      responseType: 'blob',
+      onDownloadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress?.(progress);
+        }
+      }
+    });
+
+    // Extract filename from response headers or use default
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = `file_${fileId}`;
+    
+    if (contentDisposition) {
+      const matches = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (matches && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+        filename = decodeURIComponent(filename);
+      }
+    }
+
+    // Create blob and download
+    const blob = new Blob([response.data]);
+    const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = downloadData.signedUrl;
-    link.download = downloadData.fileName;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    
-    // Add to DOM temporarily
+    link.href = url;
+    link.download = filename;
     document.body.appendChild(link);
-    onProgress?.(60);
-    
-    // Trigger download
     link.click();
-    onProgress?.(90);
-    
-    // Clean up
     document.body.removeChild(link);
-    onProgress?.(100);
+    window.URL.revokeObjectURL(url);
     
-    console.log(`Download initiated for: ${downloadData.fileName}`);
+    onProgress?.(100);
+    console.log(`Download completed: ${filename}`);
   } catch (error) {
     console.error('Download failed:', error);
     throw error;
   }
 };
 
-// Alternative download method using fetch for better control
-
+// Alternative download method using fetch for better control (kept for compatibility)
 export const downloadFileWithFetch = async (
   fileId: number,
   onProgress?: (progress: number) => void
 ): Promise<void> => {
-  try {
-    onProgress?.(5);
-    const downloadData = await getSecureDownloadUrl(fileId);
-    onProgress?.(10);
-
-    const response = await fetch(downloadData.signedUrl, {
-      method: 'GET',
-      headers: { Accept: '*/*' },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Network response was not ok: ${response.status}`);
-    }
-
-    // Try to get content length for progress calculation
-    const contentLengthHeader = response.headers.get('Content-Length') || response.headers.get('content-length');
-    const total = contentLengthHeader ? parseInt(contentLengthHeader, 10) : undefined;
-
-    if (!response.body) {
-      // Fallback: use blob directly
-      const blobFallback = await response.blob();
-      const url = window.URL.createObjectURL(blobFallback);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = downloadData.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      onProgress?.(100);
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let received = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        received += value.length;
-        if (total) {
-          const pct = Math.round((received / total) * 100);
-          onProgress?.(pct);
-        } else {
-          // Estimate progress with arbitrary scaling if total unknown
-          onProgress?.(Math.min(95, Math.round((received / (1024 * 1024)) * 10)));
-        }
-      }
-    }
-
-    // Combine chunks into a single Uint8Array
-    const combined = new Uint8Array(received);
-    let position = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, position);
-      position += chunk.length;
-    }
-
-    // Create blob from Uint8Array
-    const blob = new Blob([combined]);
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = downloadData.fileName;
-    document.body.appendChild(link);
-    link.click();
-
-    // Cleanup
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-    onProgress?.(100);
-    console.log(`Download completed: ${downloadData.fileName}`);
-  } catch (error) {
-    console.error('Fetch download failed:', error);
-    throw error;
-  }
+  return downloadFile(fileId, onProgress);
 };
 
 // Delete functions
@@ -378,6 +331,41 @@ export const renameFolder = async (
   const response = await api.patch<{ folder: Folder; message: string }>(`/folders/${folderId}`, {
     name: newName,
   });
+  return response.data;
+};
+
+// Clipboard operations
+export const copyToClipboard = async (
+  itemId: number,
+  itemType: 'file' | 'folder'
+): Promise<ClipboardResponse> => {
+  const response = await api.post<ClipboardResponse>(`/clipboard/copy/${itemType}/${itemId}`);
+  return response.data;
+};
+
+export const cutToClipboard = async (
+  itemId: number,
+  itemType: 'file' | 'folder'
+): Promise<ClipboardResponse> => {
+  const response = await api.post<ClipboardResponse>(`/clipboard/cut/${itemType}/${itemId}`);
+  return response.data;
+};
+
+export const pasteFromClipboard = async (
+  targetFolderId?: number | null
+): Promise<PasteResponse> => {
+  const url = targetFolderId ? `/clipboard/paste/${targetFolderId}` : '/clipboard/paste';
+  const response = await api.post<PasteResponse>(url);
+  return response.data;
+};
+
+export const getClipboardContents = async (): Promise<any[]> => {
+  const response = await api.get('/clipboard/contents');
+  return response.data.clipboard || [];
+};
+
+export const clearClipboard = async (): Promise<{ message: string }> => {
+  const response = await api.delete('/clipboard/clear');
   return response.data;
 };
 

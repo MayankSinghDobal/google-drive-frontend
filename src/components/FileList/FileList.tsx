@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { getFileTypeInfo, canPreviewFile, getOpenWithOptions } from "../../utils/fileTypes";
 import PreviewDialog from "../Preview/PreviewDialog";
 import {
@@ -9,6 +9,7 @@ import {
   Button,
   Dialog,
   DialogContent,
+  Grid,
   IconButton,
   Box,
   Menu,
@@ -25,6 +26,9 @@ import {
   Chip,
   Divider,
   Alert,
+  Snackbar,
+  Switch,
+  FormControlLabel,
 } from "@mui/material";
 import {
   Close,
@@ -41,7 +45,13 @@ import {
   Launch,
   CloudDownload,
   Info,
+  ContentPaste,
+  Settings,
+  Schedule,
 } from "@mui/icons-material";
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { motion } from "framer-motion";
 import type { Item, Folder as FolderType } from "../../types";
 import {
@@ -52,13 +62,17 @@ import {
   moveFile,
   moveFolder,
   downloadFile,
-  downloadFileWithFetch,
+  shareFile,
+  copyToClipboard,
+  cutToClipboard,
+  pasteFromClipboard,
+  getClipboardContents,
 } from "../../services/api";
 
 interface FileListProps {
   items: Item[];
   folders: FolderType[];
-  onShare: (id: number) => void;
+  onShare: (id: number, options?: any) => void;
   onRefresh: () => Promise<void>;
   currentFolder: number | null;
   onItemClick: (item: Item) => void;
@@ -85,22 +99,57 @@ const FileList: React.FC<FileListProps> = ({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [openWithDialogOpen, setOpenWithDialogOpen] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
   // Download state
   const [downloadProgress, setDownloadProgress] = useState<{ [key: number]: number }>({});
 
   // Clipboard state
-  const [clipboardItems, setClipboardItems] = useState<
-    { id: number; type: "file" | "folder"; operation: "copy" | "cut" }[]
-  >([]);
+  const [clipboardItems, setClipboardItems] = useState<any[]>([]);
 
   // Form states
   const [newName, setNewName] = useState("");
   const [targetFolder, setTargetFolder] = useState<string | null>("");
 
+  // Share dialog states
+  const [shareOptions, setShareOptions] = useState({
+    role: "view" as "view" | "edit",
+    can_download: true,
+    can_preview: true,
+    expires_at: null as Date | null,
+    max_access_count: null as number | null,
+  });
+
   // Loading states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error" | "info";
+  }>({
+    open: false,
+    message: "",
+    severity: "success",
+  });
+
+  // Load clipboard contents on mount
+  useEffect(() => {
+    const loadClipboard = async () => {
+      try {
+        const clipboard = await getClipboardContents();
+        setClipboardItems(clipboard);
+      } catch (error) {
+        console.error('Failed to load clipboard:', error);
+      }
+    };
+    
+    loadClipboard();
+  }, []);
+
+  const showSnackbar = (message: string, severity: "success" | "error" | "info" = "success") => {
+    setSnackbar({ open: true, message, severity });
+  };
 
   const handleMenuClick = (
     event: React.MouseEvent<HTMLElement>,
@@ -127,9 +176,11 @@ const FileList: React.FC<FileListProps> = ({
         setError(null);
         setDownloadProgress(prev => ({ ...prev, [item.id]: 0 }));
         
-        await downloadFileWithFetch(item.id, (progress) => {
+        await downloadFile(item.id, (progress) => {
           setDownloadProgress(prev => ({ ...prev, [item.id]: progress }));
         });
+        
+        showSnackbar(`${item.name} downloaded successfully!`);
         
         // Clear progress after a short delay
         setTimeout(() => {
@@ -138,10 +189,10 @@ const FileList: React.FC<FileListProps> = ({
             delete updated[item.id];
             return updated;
           });
-        }, 20000);
-      } catch (error) {
+        }, 2000);
+      } catch (error: any) {
         console.error("Download failed:", error);
-        setError("Download failed. Please try again.");
+        setError(error.response?.data?.error || "Download failed. Please try again.");
         setDownloadProgress(prev => {
           const updated = { ...prev };
           delete updated[item.id];
@@ -166,6 +217,7 @@ const FileList: React.FC<FileListProps> = ({
 
       await onRefresh();
       setDeleteDialogOpen(false);
+      showSnackbar(`${selectedItem.name} deleted successfully!`);
     } catch (error: any) {
       console.error("Delete failed:", error);
       setError(error.response?.data?.error || "Delete failed. Please try again.");
@@ -191,6 +243,7 @@ const FileList: React.FC<FileListProps> = ({
       await onRefresh();
       setRenameDialogOpen(false);
       setNewName("");
+      showSnackbar(`Renamed to "${newName.trim()}" successfully!`);
     } catch (error: any) {
       console.error("Rename failed:", error);
       setError(error.response?.data?.error || "Rename failed. Please try again.");
@@ -218,6 +271,7 @@ const FileList: React.FC<FileListProps> = ({
       await onRefresh();
       setMoveDialogOpen(false);
       setTargetFolder("");
+      showSnackbar(`${selectedItem.name} moved successfully!`);
     } catch (error: any) {
       console.error("Move failed:", error);
       setError(error.response?.data?.error || "Move failed. Please try again.");
@@ -227,18 +281,94 @@ const FileList: React.FC<FileListProps> = ({
     }
   };
 
-  const handleCopy = (item: Item | null) => {
+  const handleCopy = async (item: Item | null) => {
     if (!item) return;
-    setClipboardItems([{ id: item.id, type: item.type, operation: "copy" }]);
-    handleMenuClose();
-    console.log("Copied:", item.name);
+    
+    try {
+      await copyToClipboard(item.id, item.type);
+      await loadClipboard();
+      showSnackbar(`${item.name} copied to clipboard`);
+      handleMenuClose();
+    } catch (error: any) {
+      console.error("Copy failed:", error);
+      setError(error.response?.data?.error || "Copy failed. Please try again.");
+    }
   };
 
-  const handleCut = (item: Item | null) => {
+  const handleCut = async (item: Item | null) => {
     if (!item) return;
-    setClipboardItems([{ id: item.id, type: item.type, operation: "cut" }]);
-    handleMenuClose();
-    console.log("Cut:", item.name);
+    
+    try {
+      await cutToClipboard(item.id, item.type);
+      await loadClipboard();
+      showSnackbar(`${item.name} cut to clipboard`);
+      handleMenuClose();
+    } catch (error: any) {
+      console.error("Cut failed:", error);
+      setError(error.response?.data?.error || "Cut failed. Please try again.");
+    }
+  };
+
+  const handlePaste = async () => {
+    try {
+      setLoading(true);
+      const result = await pasteFromClipboard(currentFolder);
+      await onRefresh();
+      await loadClipboard();
+      showSnackbar(result.message);
+    } catch (error: any) {
+      console.error("Paste failed:", error);
+      setError(error.response?.data?.error || "Paste failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadClipboard = async () => {
+    try {
+      const clipboard = await getClipboardContents();
+      setClipboardItems(clipboard);
+    } catch (error) {
+      console.error('Failed to load clipboard:', error);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!selectedItem || selectedItem.type !== "file") return;
+
+    try {
+      setLoading(true);
+      const options = {
+        ...shareOptions,
+        expires_at: shareOptions.expires_at ? shareOptions.expires_at.toISOString() : null,
+      };
+      
+      const response = await shareFile(selectedItem.id, options);
+      
+      // Try to copy to clipboard
+      try {
+        await navigator.clipboard.writeText(response.shareableLink);
+        showSnackbar("Share link copied to clipboard!");
+      } catch (clipboardErr) {
+        showSnackbar(`Share link created: ${response.shareableLink}`, "info");
+      }
+      
+      setShareDialogOpen(false);
+      // Reset share options
+      setShareOptions({
+        role: "view",
+        can_download: true,
+        can_preview: true,
+        expires_at: null,
+        max_access_count: null,
+      });
+    } catch (error: any) {
+      console.error("Share failed:", error);
+      setError(error.response?.data?.error || "Sharing failed. Please try again.");
+    } finally {
+      setLoading(false);
+      handleMenuClose();
+    }
   };
 
   const handleOpenWith = (application: string) => {
@@ -307,16 +437,22 @@ const FileList: React.FC<FileListProps> = ({
 
   if (items.length === 0) {
     return (
-      <Typography
-        variant="body1"
-        sx={{
-          textAlign: "center",
-          color: "text.secondary",
-          p: 4,
-        }}
-      >
-        No files or folders found
-      </Typography>
+      <Box sx={{ textAlign: "center", py: 8 }}>
+        <Typography variant="h6" color="text.secondary" gutterBottom>
+          {clipboardItems.length > 0 ? "No files here, but you have items to paste!" : "No files or folders found"}
+        </Typography>
+        {clipboardItems.length > 0 && (
+          <Button
+            variant="contained"
+            startIcon={<ContentPaste />}
+            onClick={handlePaste}
+            disabled={loading}
+            sx={{ mt: 2 }}
+          >
+            Paste {clipboardItems.length} item{clipboardItems.length > 1 ? 's' : ''}
+          </Button>
+        )}
+      </Box>
     );
   }
 
@@ -328,9 +464,30 @@ const FileList: React.FC<FileListProps> = ({
         </Alert>
       )}
 
-      <Box sx={{ display: "grid", gap: 2, p: 2, gridTemplateColumns: { xs: "repeat(1, 1fr)", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)", lg: "repeat(4, 1fr)" } }}>
+      {/* Clipboard Status */}
+      {clipboardItems.length > 0 && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 2 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              startIcon={<ContentPaste />}
+              onClick={handlePaste}
+              disabled={loading}
+            >
+              Paste
+            </Button>
+          }
+        >
+          {clipboardItems.length} item{clipboardItems.length > 1 ? 's' : ''} in clipboard
+        </Alert>
+      )}
+
+      <Grid container spacing={2} sx={{ p: 2 }}>
         {items.map((item) => (
-          <Box key={item.id} sx={{ display: "block" }}>
+          <Grid key={item.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -347,6 +504,12 @@ const FileList: React.FC<FileListProps> = ({
                   "&:hover": {
                     boxShadow: 3,
                   },
+                  // Highlight cut items
+                  opacity: clipboardItems.some(clip => 
+                    clip.item_id === item.id && 
+                    clip.item_type === item.type && 
+                    clip.operation === 'cut'
+                  ) ? 0.6 : 1,
                 }}
                 onClick={() => {
                   if (item.type === "folder") {
@@ -455,7 +618,8 @@ const FileList: React.FC<FileListProps> = ({
                         startIcon={<Share />}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onShare(item.id);
+                          setSelectedItem(item);
+                          setShareDialogOpen(true);
                         }}
                       >
                         Share
@@ -483,9 +647,9 @@ const FileList: React.FC<FileListProps> = ({
                 </CardActions>
               </Card>
             </motion.div>
-          </Box>
+          </Grid>
         ))}
-      </Box>
+      </Grid>
 
       {/* Enhanced Context Menu */}
       <Menu
@@ -529,7 +693,7 @@ const FileList: React.FC<FileListProps> = ({
         )}
 
         {selectedItem?.type === "file" && (
-          <MenuItem onClick={() => onShare(selectedItem.id)}>
+          <MenuItem onClick={() => setShareDialogOpen(true)}>
             <ListItemIcon>
               <Share />
             </ListItemIcon>
@@ -606,6 +770,91 @@ const FileList: React.FC<FileListProps> = ({
         item={previewItem}
         onDownload={handleDownload}
       />
+
+      {/* Enhanced Share Dialog */}
+      <Dialog
+        open={shareDialogOpen}
+        onClose={() => setShareDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Share "{selectedItem?.name}"
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
+            {/* Permission Level */}
+            <FormControl fullWidth>
+              <InputLabel>Permission Level</InputLabel>
+              <Select
+                value={shareOptions.role}
+                onChange={(e) => setShareOptions(prev => ({ ...prev, role: e.target.value as "view" | "edit" }))}
+                label="Permission Level"
+              >
+                <MenuItem value="view">View Only</MenuItem>
+                <MenuItem value="edit">Can Edit</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Download Permission */}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={shareOptions.can_download}
+                  onChange={(e) => setShareOptions(prev => ({ ...prev, can_download: e.target.checked }))}
+                />
+              }
+              label="Allow Download"
+            />
+
+            {/* Preview Permission */}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={shareOptions.can_preview}
+                  onChange={(e) => setShareOptions(prev => ({ ...prev, can_preview: e.target.checked }))}
+                />
+              }
+              label="Allow Preview"
+            />
+
+            {/* Expiration Date */}
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DateTimePicker
+                label="Expiration Date (Optional)"
+                value={shareOptions.expires_at}
+                onChange={(date: Date | null) => setShareOptions(prev => ({ ...prev, expires_at: date }))}
+                slotProps={{ textField: { fullWidth: true } }}
+                minDateTime={new Date()}
+              />
+            </LocalizationProvider>
+
+            {/* Max Access Count */}
+            <TextField
+              label="Max Access Count (Optional)"
+              type="number"
+              value={shareOptions.max_access_count || ''}
+              onChange={(e) => setShareOptions(prev => ({ 
+                ...prev, 
+                max_access_count: e.target.value ? parseInt(e.target.value) : null 
+              }))}
+              fullWidth
+              inputProps={{ min: 1 }}
+              helperText="Leave empty for unlimited access"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShareDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleShare}
+            disabled={loading}
+            variant="contained"
+          >
+            Create Share Link
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Open With Dialog */}
       <Dialog
@@ -822,6 +1071,22 @@ const FileList: React.FC<FileListProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </>
   );
 };
