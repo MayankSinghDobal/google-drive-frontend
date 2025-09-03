@@ -1,3 +1,4 @@
+// SharedFile.tsx
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -28,8 +29,8 @@ interface SharedFileData {
     id: number;
     name: string;
     size: number;
-    format: string;
-    publicUrl?: string;
+    format: string; // mime type e.g. video/mp4, image/jpeg
+    publicUrl?: string | null;
     created_at: string;
   };
   permissions: {
@@ -51,6 +52,7 @@ const SharedFile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchSharedFile = async () => {
@@ -61,24 +63,23 @@ const SharedFile: React.FC = () => {
       }
 
       try {
-        console.log(`Fetching shared file: ${shareToken}`);
-        console.log(`Full API URL: ${API_BASE_URL}/files/share/${shareToken}`);
-console.log(`Share token being used: ${shareToken}`);
-const response = await axios.get(
-  `${API_BASE_URL}/files/share/${shareToken}`,
-  {
-    headers: {
-      "Content-Type": "application/json",
-    },
-    withCredentials: false,
-  }
-);
+        console.log(`Fetching shared file (token): ${shareToken}`);
+        // NOTE: backend expected route is /share/:token (not /files/share/:token)
+        const response = await axios.get(`${API_BASE_URL}/share/${shareToken}`, {
+          headers: { "Content-Type": "application/json" },
+          withCredentials: false,
+        });
 
         console.log("Shared file response:", response.data);
         setFileData(response.data as SharedFileData);
       } catch (err: any) {
         console.error("Shared file fetch error:", err);
-        setError(err.response?.data?.error || "Failed to load shared file");
+        const message =
+          err?.response?.data?.error ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load shared file";
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -96,26 +97,46 @@ const response = await axios.get(
     try {
       setDownloading(true);
       setError(null);
+      setProgress(0);
+      console.log(`Downloading shared file (token): ${shareToken}`);
 
-      console.log(`Downloading shared file: ${shareToken}`);
+      const resp = await axios.get(`${API_BASE_URL}/share/${shareToken}/download`, {
+        responseType: "blob",
+        headers: {
+          Accept: "*/*",
+        },
+        withCredentials: false,
+        onDownloadProgress: (event) => {
+          if (event.total) {
+            const percent = Math.round((event.loaded * 100) / event.total);
+            setProgress(percent);
+          }
+        },
+      });
 
-      const response = await axios.get(
-        `${API_BASE_URL}/files/share/${shareToken}/download`,
-        {
-          responseType: "blob",
-          headers: {
-            Accept: "*/*",
-          },
-          withCredentials: false,
+      // Determine filename from Content-Disposition if provided
+      const disposition = resp.headers["content-disposition"] as string | undefined;
+      let filename = fileData.file.name || "download";
+      if (disposition) {
+        const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^;"']+)/i);
+        if (match && match[1]) {
+          filename = decodeURIComponent(match[1].replace(/["']/g, ""));
         }
-      );
+      }
 
-      // Create blob URL and trigger download
-      const blob = new Blob([response.data]);
+      const contentType = (resp.headers["content-type"] as string) || fileData.file.format || "application/octet-stream";
+      const blob = new Blob([resp.data], { type: contentType });
+
+      // if filename doesn't have extension, try to add from content-type
+      if (!filename.includes(".") && contentType.includes("/")) {
+        const subtype = contentType.split("/")[1];
+        if (subtype) filename = `${filename}.${subtype.split("+")[0]}`;
+      }
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = fileData.file.name;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -124,9 +145,15 @@ const response = await axios.get(
       console.log("Download completed successfully");
     } catch (err: any) {
       console.error("Download failed:", err);
-      setError(err.response?.data?.error || "Download failed. Please try again.");
+      const message =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Download failed. Please try again.";
+      setError(message);
     } finally {
       setDownloading(false);
+      setProgress(null);
     }
   };
 
@@ -311,7 +338,7 @@ const response = await axios.get(
                       disabled={downloading || isExpired || isAccessLimitReached}
                       fullWidth
                     >
-                      {downloading ? "Downloading..." : "Download File"}
+                      {downloading ? (progress ? `Downloading ${progress}%` : "Downloading...") : "Download File"}
                     </Button>
                   )}
 
@@ -416,7 +443,7 @@ const response = await axios.get(
                 {fileData.file.format.toLowerCase().includes("image") && (
                   <Box sx={{ textAlign: "center", p: 2, bgcolor: "#f9f9f9" }}>
                     <img
-                      src={fileData.file.publicUrl}
+                      src={fileData.file.publicUrl || ""}
                       alt={fileData.file.name}
                       style={{
                         maxWidth: "100%",
@@ -451,7 +478,7 @@ const response = await axios.get(
 
                 {fileData.file.format.toLowerCase().includes("text") && (
                   <iframe
-                    src={fileData.file.publicUrl}
+                    src={fileData.file.publicUrl || ""}
                     title="Text Preview"
                     style={{ width: "100%", height: "400px", border: "none", backgroundColor: "white" }}
                     onError={(e) => {

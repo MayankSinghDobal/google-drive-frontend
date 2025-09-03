@@ -197,6 +197,77 @@ export const shareFile = async (
   return response.data;
 };
 
+/**
+ * Get shared file metadata by token
+ * Backend expected route: GET /share/:token
+ */
+export const getSharedFileByToken = async (token: string): Promise<any> => {
+  const response = await api.get(`/share/${token}`);
+  return response.data;
+};
+
+/**
+ * Download a shared file by token (creates blob and triggers browser download)
+ */
+export const downloadSharedFileByToken = async (
+  token: string,
+  onProgress?: (progress: number) => void
+): Promise<void> => {
+  try {
+    onProgress?.(10);
+
+    const response = await api.get(`/share/${token}/download`, {
+      responseType: 'blob',
+      onDownloadProgress: (progressEvent: AxiosProgressEvent) => {
+        if (progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress?.(progress);
+        }
+      },
+    });
+
+    const contentType = (response.headers && response.headers['content-type']) || 'application/octet-stream';
+    const contentDisposition = response.headers && response.headers['content-disposition'];
+    let filename = `shared_file_${token}`;
+
+    if (contentDisposition) {
+      const matches = contentDisposition.match(/filename\*?=(?:UTF-8''|")?([^;"']+)/i);
+      if (matches && matches[1]) {
+        filename = decodeURIComponent(matches[1].replace(/['"]/g, ''));
+      } else {
+        const m = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (m && m[1]) {
+          filename = m[1].replace(/['"]/g, '');
+        }
+      }
+    }
+
+    if (!filename.includes('.') && contentType && contentType.includes('/')) {
+      const subtype = contentType.split('/')[1];
+      if (subtype) {
+        filename = `${filename}.${subtype.split('+')[0]}`;
+      }
+    }
+
+    const blob = new Blob([response.data], { type: contentType });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    onProgress?.(100);
+    console.log(`Shared download completed: ${filename}`);
+  } catch (error) {
+    console.error('Shared download failed:', error);
+    throw error;
+  }
+};
+
+
 export const createFolder = async (
   name: string,
   parentId: number | null = null
@@ -230,11 +301,11 @@ export const downloadFile = async (
 ): Promise<void> => {
   try {
     onProgress?.(10);
-    
+
     // Direct download from backend
     const response = await api.get(`/files/${fileId}/download`, {
       responseType: 'blob',
-      onDownloadProgress: (progressEvent) => {
+      onDownloadProgress: (progressEvent: AxiosProgressEvent) => {
         if (progressEvent.total) {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           onProgress?.(progress);
@@ -242,20 +313,34 @@ export const downloadFile = async (
       }
     });
 
-    // Extract filename from response headers or use default
-    const contentDisposition = response.headers['content-disposition'];
+    // Determine content type and filename
+    const contentType = (response.headers && response.headers['content-type']) || 'application/octet-stream';
+    const contentDisposition = response.headers && response.headers['content-disposition'];
     let filename = `file_${fileId}`;
-    
+
     if (contentDisposition) {
-      const matches = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      const matches = contentDisposition.match(/filename\*?=(?:UTF-8''|")?([^;"']+)/i);
       if (matches && matches[1]) {
-        filename = matches[1].replace(/['"]/g, '');
-        filename = decodeURIComponent(filename);
+        filename = decodeURIComponent(matches[1].replace(/['"]/g, ''));
+      } else {
+        // fallback regex
+        const m = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (m && m[1]) {
+          filename = m[1].replace(/['"]/g, '');
+        }
       }
     }
 
-    // Create blob and download
-    const blob = new Blob([response.data]);
+    // append extension from content-type if missing
+    if (!filename.includes('.') && contentType && contentType.includes('/')) {
+      const subtype = contentType.split('/')[1];
+      if (subtype) {
+        filename = `${filename}.${subtype.split('+')[0]}`;
+      }
+    }
+
+    // Create blob using contentType, so browser uses correct MIME
+    const blob = new Blob([response.data], { type: contentType });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -264,7 +349,7 @@ export const downloadFile = async (
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
-    
+
     onProgress?.(100);
     console.log(`Download completed: ${filename}`);
   } catch (error) {
@@ -272,8 +357,7 @@ export const downloadFile = async (
     throw error;
   }
 };
-
-// Alternative download method using fetch for better control (kept for compatibility)
+// kept a thin compatibility wrapper for alternate download methods
 export const downloadFileWithFetch = async (
   fileId: number,
   onProgress?: (progress: number) => void
