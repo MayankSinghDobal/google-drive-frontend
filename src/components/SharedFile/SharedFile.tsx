@@ -62,15 +62,17 @@ const SharedFile: React.FC = () => {
 
       try {
         console.log(`Fetching shared file: ${shareToken}`);
-        const response = await axios.get(
-          `${API_BASE_URL}/files/share/${shareToken}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-            },
-            withCredentials: false,
-          }
-        );
+        console.log(`Full API URL: ${API_BASE_URL}/files/share/${shareToken}`);
+console.log(`Share token being used: ${shareToken}`);
+const response = await axios.get(
+  `${API_BASE_URL}/files/share/${shareToken}`,
+  {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    withCredentials: false,
+  }
+);
 
         console.log("Shared file response:", response.data);
         setFileData(response.data as SharedFileData);
