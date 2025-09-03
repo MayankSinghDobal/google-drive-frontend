@@ -202,8 +202,17 @@ export const shareFile = async (
  * Backend expected route: GET /share/:token
  */
 export const getSharedFileByToken = async (token: string): Promise<any> => {
-  const response = await api.get(`/share/${token}`);
-  return response.data;
+  console.log(`[API] Calling GET /share/${token}`);
+  console.log(`[API] Full URL: ${baseURL}/share/${token}`);
+  
+  try {
+    const response = await api.get(`/share/${token}`);
+    console.log(`[API] Response received:`, response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`[API] Error calling /share/${token}:`, error);
+    throw error;
+  }
 };
 
 /**
