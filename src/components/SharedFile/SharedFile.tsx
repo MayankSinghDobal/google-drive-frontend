@@ -1,5 +1,5 @@
-// SharedFile.tsx
-import React, { useState, useEffect } from "react";
+// src/components/SharedFile.tsx
+import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Box,
@@ -22,7 +22,17 @@ import {
   CheckCircle,
   Info,
 } from "@mui/icons-material";
-import axios from "axios";
+import { getSharedFileByToken, downloadSharedFileByToken } from  "src/services/api";
+
+/**
+ * SharedFile.tsx
+ *
+ * Full-featured shared-file viewer component.
+ * - Fetches metadata from /share/:token using getSharedFileByToken
+ * - Downloads via downloadSharedFileByToken to preserve content-type & filename
+ *
+ * Note: make sure services/api.ts exports getSharedFileByToken and downloadSharedFileByToken.
+ */
 
 interface SharedFileData {
   file: {
@@ -31,6 +41,7 @@ interface SharedFileData {
     size: number;
     format: string; // mime type e.g. video/mp4, image/jpeg
     publicUrl?: string | null;
+    path?: string | null;
     created_at: string;
   };
   permissions: {
@@ -43,19 +54,19 @@ interface SharedFileData {
   };
 }
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "https://google-drive-backend-ten.vercel.app";
-
 const SharedFile: React.FC = () => {
   const { shareToken } = useParams<{ shareToken: string }>();
   const [fileData, setFileData] = useState<SharedFileData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<boolean>(false);
   const [progress, setProgress] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchSharedFile = async () => {
+      setLoading(true);
+      setError(null);
+
       if (!shareToken) {
         setError("Invalid share token");
         setLoading(false);
@@ -63,23 +74,37 @@ const SharedFile: React.FC = () => {
       }
 
       try {
-        console.log(`Fetching shared file (token): ${shareToken}`);
-        // NOTE: backend expected route is /share/:token (not /files/share/:token)
-        const response = await axios.get(`${API_BASE_URL}/share/${shareToken}`, {
-          headers: { "Content-Type": "application/json" },
-          withCredentials: false,
-        });
+        console.debug(`[SharedFile] fetching /share/${shareToken}`);
+        const resp = await getSharedFileByToken(shareToken);
+        console.debug("[SharedFile] backend response:", resp);
+        // normalize: backend might return different shapes; attempt safe mapping
+        if (!resp) {
+          throw new Error("Empty response from server");
+        }
 
-        console.log("Shared file response:", response.data);
-        setFileData(response.data as SharedFileData);
+        // If backend wraps result in { file, permissions, message } or { data: ... }
+        const payload =
+          (resp as any).file && (resp as any).permissions
+            ? (resp as SharedFileData)
+            : (resp.data as SharedFileData) || (resp as SharedFileData);
+
+        if (!payload || !payload.file) {
+          // Debug info
+          console.error("Unexpected shared file payload:", resp);
+          throw new Error(
+            (resp && (resp as any).error) || "Invalid shared file data received"
+          );
+        }
+
+        setFileData(payload);
       } catch (err: any) {
-        console.error("Shared file fetch error:", err);
-        const message =
+        console.error("[SharedFile] fetchSharedFile error:", err);
+        const msg =
           err?.response?.data?.error ||
           err?.response?.data?.message ||
           err?.message ||
           "Failed to load shared file";
-        setError(message);
+        setError(msg);
       } finally {
         setLoading(false);
       }
@@ -89,68 +114,39 @@ const SharedFile: React.FC = () => {
   }, [shareToken]);
 
   const handleDownload = async () => {
-    if (!fileData?.permissions.can_download || !shareToken) {
-      setError("Download not allowed");
+    if (!fileData) return;
+    if (!fileData.permissions.can_download) {
+      setError("Download is not allowed for this share");
+      return;
+    }
+
+    if (!shareToken) {
+      setError("Missing share token");
       return;
     }
 
     try {
       setDownloading(true);
-      setError(null);
       setProgress(0);
-      console.log(`Downloading shared file (token): ${shareToken}`);
+      setError(null);
 
-      const resp = await axios.get(`${API_BASE_URL}/share/${shareToken}/download`, {
-        responseType: "blob",
-        headers: {
-          Accept: "*/*",
-        },
-        withCredentials: false,
-        onDownloadProgress: (event) => {
-          if (event.total) {
-            const percent = Math.round((event.loaded * 100) / event.total);
-            setProgress(percent);
-          }
-        },
+      console.debug(`[SharedFile] downloading via API helper for token=${shareToken}`);
+
+      // downloadSharedFileByToken returns metadata after triggering browser download
+      await downloadSharedFileByToken(shareToken, (p) => {
+        setProgress(p);
       });
 
-      // Determine filename from Content-Disposition if provided
-      const disposition = resp.headers["content-disposition"] as string | undefined;
-      let filename = fileData.file.name || "download";
-      if (disposition) {
-        const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^;"']+)/i);
-        if (match && match[1]) {
-          filename = decodeURIComponent(match[1].replace(/["']/g, ""));
-        }
-      }
-
-      const contentType = (resp.headers["content-type"] as string) || fileData.file.format || "application/octet-stream";
-      const blob = new Blob([resp.data], { type: contentType });
-
-      // if filename doesn't have extension, try to add from content-type
-      if (!filename.includes(".") && contentType.includes("/")) {
-        const subtype = contentType.split("/")[1];
-        if (subtype) filename = `${filename}.${subtype.split("+")[0]}`;
-      }
-
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      console.log("Download completed successfully");
+      // success
+      setProgress(null);
     } catch (err: any) {
-      console.error("Download failed:", err);
-      const message =
+      console.error("[SharedFile] download failed:", err);
+      const msg =
         err?.response?.data?.error ||
         err?.response?.data?.message ||
         err?.message ||
         "Download failed. Please try again.";
-      setError(message);
+      setError(msg);
     } finally {
       setDownloading(false);
       setProgress(null);
@@ -183,6 +179,7 @@ const SharedFile: React.FC = () => {
   };
 
   const formatFileSize = (bytes: number) => {
+    if (bytes == null) return "Unknown";
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024)
@@ -191,7 +188,7 @@ const SharedFile: React.FC = () => {
   };
 
   const getFileTypeCategory = (format: string) => {
-    const f = format.toLowerCase();
+    const f = (format || "").toLowerCase();
     if (f.includes("image")) return "Image";
     if (f.includes("pdf")) return "PDF Document";
     if (f.includes("text")) return "Text Document";
@@ -233,7 +230,7 @@ const SharedFile: React.FC = () => {
           <Paper elevation={3} sx={{ p: 4, textAlign: "center" }}>
             <ErrorIcon color="error" sx={{ fontSize: 64, mb: 2 }} />
             <Typography variant="h5" color="error" gutterBottom>
-              Access Denied
+              Access Error
             </Typography>
             <Alert severity="error" sx={{ mb: 3 }}>
               {error}
@@ -269,9 +266,11 @@ const SharedFile: React.FC = () => {
   }
 
   const isExpired =
-    fileData.permissions.expires_at && new Date() > new Date(fileData.permissions.expires_at);
+    !!fileData.permissions.expires_at &&
+    new Date() > new Date(fileData.permissions.expires_at);
 
-  const isAccessLimitReached = !!fileData.permissions.max_access_count &&
+  const isAccessLimitReached =
+    !!fileData.permissions.max_access_count &&
     fileData.permissions.access_count >= fileData.permissions.max_access_count;
 
   return (
@@ -286,8 +285,14 @@ const SharedFile: React.FC = () => {
           </Box>
 
           <CardContent>
-            {/* Using flexbox instead of MUI Grid to avoid typing/compat issues */}
-            <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, alignItems: "center" }}>
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: { xs: "column", md: "row" },
+                gap: 3,
+                alignItems: "center",
+              }}
+            >
               <Box sx={{ width: { xs: "100%", md: "66.666%" } }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                   <Typography
@@ -303,8 +308,15 @@ const SharedFile: React.FC = () => {
                 </Box>
 
                 <Box sx={{ display: "flex", gap: 1, mt: 2, flexWrap: "wrap" }}>
-                  <Chip icon={<Info />} label={getFileTypeCategory(fileData.file.format)} variant="outlined" />
-                  <Chip label={formatFileSize(fileData.file.size)} variant="outlined" />
+                  <Chip
+                    icon={<Info />}
+                    label={getFileTypeCategory(fileData.file.format)}
+                    variant="outlined"
+                  />
+                  <Chip
+                    label={formatFileSize(fileData.file.size)}
+                    variant="outlined"
+                  />
                   <Chip
                     icon={fileData.permissions.role === "edit" ? <Edit /> : <Visibility />}
                     label={`${fileData.permissions.role} access`}
@@ -312,12 +324,9 @@ const SharedFile: React.FC = () => {
                   />
                 </Box>
 
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ mt: 2 }}
-                >
-                  Shared on: {new Date(fileData.file.created_at).toLocaleDateString(undefined, {
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  Shared on:{" "}
+                  {new Date(fileData.file.created_at).toLocaleDateString(undefined, {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
@@ -338,7 +347,11 @@ const SharedFile: React.FC = () => {
                       disabled={downloading || isExpired || isAccessLimitReached}
                       fullWidth
                     >
-                      {downloading ? (progress ? `Downloading ${progress}%` : "Downloading...") : "Download File"}
+                      {downloading
+                        ? progress != null
+                          ? `Downloading ${progress}%`
+                          : "Downloading..."
+                        : "Download File"}
                     </Button>
                   )}
 
@@ -346,6 +359,21 @@ const SharedFile: React.FC = () => {
                     <Alert severity="info" sx={{ mt: 1 }}>
                       Download is not allowed for this share
                     </Alert>
+                  )}
+
+                  {fileData.file.publicUrl && (
+                    <Typography variant="caption" sx={{ mt: 1 }}>
+                      Public URL (from storage):{" "}
+                      <a href={fileData.file.publicUrl} target="_blank" rel="noopener noreferrer">
+                        Open public URL
+                      </a>
+                    </Typography>
+                  )}
+
+                  {fileData.file.path && (
+                    <Typography variant="caption" sx={{ mt: 1, display: "block" }}>
+                      Internal path: <code>{fileData.file.path}</code>
+                    </Typography>
                   )}
                 </Box>
               </Box>
@@ -360,7 +388,17 @@ const SharedFile: React.FC = () => {
               Share Details
             </Typography>
 
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2,1fr)", md: "repeat(4,1fr)" }, gap: 2 }}>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  sm: "repeat(2,1fr)",
+                  md: "repeat(4,1fr)",
+                },
+                gap: 2,
+              }}
+            >
               <Box sx={{ textAlign: "center", p: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   Permission Level
