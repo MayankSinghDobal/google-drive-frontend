@@ -22,7 +22,7 @@ import {
   CheckCircle,
   Info,
 } from "@mui/icons-material";
-import { getSharedFileByToken, downloadSharedFileByToken } from  "src/services/api";
+import { getSharedFileByToken, downloadSharedFileByToken } from "../../services/api";
 
 /**
  * SharedFile.tsx
